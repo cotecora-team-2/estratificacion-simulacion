@@ -1,0 +1,117 @@
+---
+title: "Evaluación de estratificaciones"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(devtools)
+#devtools::install_github("cotecora-team-2/quickcountmx")
+library(quickcountmx)
+sims <- read_rds(file = "../datos/simulaciones_completo.rds")
+data("conteo_2018")
+```
+
+Creamos el marco y la estratificación:
+
+```{r}
+estado <- "CHIH"
+num_gpos_marginacion <- 2
+num_gpos_ln <- 2
+marco_estado <- conteo_2018 %>%
+  filter(state_abbr == estado) %>%
+  mutate(indice_grupo = ntile(.fittedPC1, num_gpos_marginacion)) %>%
+  mutate(tam_ln = ntile(LISTA_NOMINAL_CASILLA, num_gpos_ln)) %>%
+  mutate(estrato_df = interaction(ID_DISTRITO, indice_grupo, tam_ln))
+sims_estado <- sims %>% filter(state_abbr == estado)
+nrow(marco_estado)
+```
+
+
+
+```{r}
+estratos_tbl <- marco_estado %>% group_by(estrato_df) %>% count()
+estratos_tbl
+```
+
+Seleccionamos muestras 
+
+```{r}
+frac_muestreo <- 0.07
+set.seed(8834)
+selec_muestra <- function(x) {
+  muestra <- select_sample_prop(marco_estado, stratum = estrato_df, frac = frac_muestreo)
+  muestra$id <- x
+  muestra_tiempos <- left_join(muestra, 
+                               sims_estado %>% filter(id == x), 
+                               by = c("CLAVE_CASILLA", "id"))
+  muestra_tiempos
+}
+muestras_sim <- map_df(1:500, ~ selec_muestra(.x))
+```
+
+
+```{r}
+# porcentaje recibido
+muestras_sim <- muestras_sim %>%
+  group_by(id) %>%
+  mutate(prop_obs = percent_rank(time))
+```
+
+## Verificación de muestras completas
+
+```{r}
+partidos <- c("AMLO", "JAMK", "RAC", "CAND_IND_01", "CAND_IND_02", "CNR", "VN")
+estimaciones_sin_censura <-
+  muestras_sim %>% split(.$id) %>%
+  map_df(~(ratio_estimation(.x, stratum = estrato_df,
+                            data_stratum = estratos_tbl, n_stratum = n,
+                            parties = any_of(partidos), std_errors = FALSE)), .id = "id")
+# Valores observados
+obs_tbl <- ratio_estimation(marco_estado, stratum = estrato_df, data_stratum = estratos_tbl, 
+                 n_stratum = n, parties = any_of(partidos), std_errors = FALSE)
+obs_tbl <- obs_tbl %>% rename(prop_obs = prop)
+obs_tbl
+```
+
+```{r}
+estimaciones_sin_censura %>% 
+  left_join(obs_tbl, by = "party") %>% 
+  ungroup() %>% 
+  group_by(party) %>% 
+  summarise(prop_obs = mean(prop_obs), ee = sd(prop), sesgo = mean(prop - prop_obs)) 
+```
+
+- Verificamos que el sesgo es prácticamente 0
+
+## Muestras censuradas por tiempo
+
+```{r}
+est_censuradas <- function(muestras_sim, prop_observada){
+  estimaciones_censuradas <-
+    muestras_sim %>%
+    group_by(id) %>%
+    filter(prop_obs <= prop_observada) %>%
+    split(.$id) %>%
+    map_df(~(ratio_estimation(.x, stratum = estrato_df,
+                            data_stratum = estratos_tbl, n_stratum = n,
+                            parties = any_of(partidos), std_errors = FALSE)), .id = "id") %>% 
+    mutate(censura = prop_observada)
+  estimaciones_censuradas
+}
+estimaciones_cens <- map_df(c(0.5, 0.6, 0.7, 0.8, 0.9), ~ est_censuradas(muestras_sim, .x))
+```
+
+```{r}
+resumen_censura <- estimaciones_cens %>% 
+  left_join(obs_tbl, by = "party") %>% 
+  group_by(party, censura) %>% 
+  summarise(prop_obs = mean(prop_obs), ee = sd(prop), sesgo_abs = abs(mean(prop - prop_obs)))
+```
+```{r}
+ggplot(resumen_censura, aes(x = censura, y = sesgo_abs / ee, 
+                            group = party, colour = party)) +
+  geom_point() + geom_line() + ylim(0, 2.5)
+```
+
+
