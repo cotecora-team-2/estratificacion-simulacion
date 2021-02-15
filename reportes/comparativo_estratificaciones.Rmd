@@ -1,0 +1,239 @@
+---
+title: "Evaluación de estratificaciones"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(devtools)
+library(furrr)
+set.seed(6102)
+plan(multisession, workers = 10)
+#devtools::install_github("cotecora-team-2/quickcountmx")
+library(quickcountmx)
+sims_tiempos <- read_rds(file = "../datos/simulaciones_completo.rds")
+data("conteo_2018")
+```
+
+Creamos el marco y la estratificación:
+
+```{r prep-estratos}
+estados <- c("CHIH", "MICH", "COL", "ZAC", "NAY")
+# configuraciones
+estratif_conf <- crossing(num_gpos_marginacion = c(1,2,3),
+         num_gpos_ln = c(1,2,3)) %>% 
+  mutate(estratificacion_num = row_number()) %>% 
+  transpose()
+# computos distritales
+conteo_2018_estados <- conteo_2018 %>% 
+  filter(state_abbr %in% estados) %>% 
+  group_by(state_abbr)
+# preparar estratificaciones
+marco_conf <- map_df(estratif_conf, function(x){
+  num_gpos_marginacion <- x$num_gpos_marginacion
+  num_gpos_ln <- x$num_gpos_ln
+  estratificacion_num <- x$estratificacion_num
+  marco <- conteo_2018_estados %>% 
+  group_by(state_abbr) %>%
+  mutate(estratificacion_num = estratificacion_num) %>% 
+  mutate(indice_grupo = ntile(.fittedPC1, num_gpos_marginacion)) %>%
+  mutate(tam_ln = ntile(LISTA_NOMINAL_CASILLA, num_gpos_ln)) %>%
+  mutate(estrato_df = interaction(ID_DISTRITO, indice_grupo, tam_ln))
+})
+
+#sims_estado <- sims %>% filter(state_abbr == estado)
+nrow(marco_conf)
+```
+
+
+
+```{r}
+estratos_tbl <- marco_conf %>% 
+  group_by(state_abbr, estratificacion_num, estrato_df) %>% count()
+estratos_tbl
+```
+
+Seleccionamos muestras 
+
+```{r prep-muestras}
+frac_muestreo <- c(0.04, 0.06, 0.08)
+set.seed(8834)
+if(FALSE){
+selec_muestra <- function(x, frac_m) {
+  marco_split <- marco_conf %>% 
+    split(list(marco_conf$state_abbr, marco_conf$estratificacion_num)) 
+  muestras <- map_df(marco_split, function(marco){ 
+      marco %>% select_sample_prop(stratum = estrato_df, frac = frac_m) %>%
+      mutate(id = x) %>% 
+      mutate(frac_m = frac_m)
+    })
+  muestras_tiempos <- left_join(muestras, 
+                               sims_tiempos %>% filter(id == x), 
+                               by = c("CLAVE_CASILLA", "id"))
+  muestras_tiempos
+}
+muestras_sim <- map_df(frac_muestreo, function(frac_m){
+  map_df(1:300, ~ selec_muestra(.x, frac_m)) %>% 
+  select(CLAVE_CASILLA, NOMBRE_ESTADO, ID_CASILLA, estratificacion_num, 
+         estrato_df, time, frac_m, id)
+})
+}
+#saveRDS(muestras_sim, "../datos/muestras_sim_estratos.rds")
+muestras_sim <- readr::read_rds("../datos/muestras_sim_estratos.rds") %>% 
+  rename(frac_m = frac)
+```
+
+```{r}
+muestras_sim <- left_join(muestras_sim, 
+    conteo_2018_estados %>% 
+      select(CLAVE_CASILLA, NOMBRE_ESTADO, ID_CASILLA,  
+             PAN:LISTA_NOMINAL_CASILLA, AMLO:JAMK, tipo_casilla, tipo_seccion,
+             .fittedPC1, .fittedPC2), 
+  by = c("CLAVE_CASILLA", "NOMBRE_ESTADO"))
+```
+
+
+```{r}
+# porcentaje recibido
+muestras_sim <- muestras_sim %>%
+  group_by(id, estratificacion_num, frac_m, NOMBRE_ESTADO) %>%
+  mutate(prop_obs = percent_rank(time))
+```
+
+## Verificación de muestras completas
+
+```{r}
+partidos <- c("AMLO", "JAMK", "RAC", "CAND_IND_01", "CAND_IND_02", "CNR", "VN")
+
+estimaciones_sin_censura <-
+  muestras_sim %>%
+  ungroup %>% 
+  filter(id < 11) %>% 
+  split(list(.$id, .$NOMBRE_ESTADO, .$estratificacion_num, .$frac_m)) %>%
+  future_map_dfr(function(data){
+    estratos_estado_tbl <- estratos_tbl %>%
+      filter(state_abbr == data$state_abbr[1], 
+             estratificacion_num == data$estratificacion_num[1]) %>% 
+      ungroup %>% 
+      select(estrato_df, n) 
+    data <- data %>% mutate(estrato_df = as.character(estrato_df))
+    rat_estimate <- ratio_estimation(data, stratum = estrato_df,
+                            data_stratum = estratos_estado_tbl, n_stratum = n,
+                            parties = any_of(partidos), std_errors = TRUE, B = 100) %>% 
+      add_column(NOMBRE_ESTADO = data$NOMBRE_ESTADO[1],
+                 estratificacion_num = data$estratificacion_num[1],
+                 id = data$id[1], frac_m = data$frac_m[1]) 
+    rat_estimate
+  }, .options = furrr_options(seed = TRUE))
+```
+
+
+```{r}
+# Valores observados
+estados_tbl <- conteo_2018 %>% select(NOMBRE_ESTADO, state_abbr) %>% unique
+obs_tbl <-
+  map_df(estados, function(estado){
+    marco_estado <- marco_conf %>% 
+      filter(state_abbr == estado, estratificacion_num == 1) 
+    estratos_tbl <- marco_estado %>% group_by(estrato_df) %>% count()
+    total <- ratio_estimation(marco_estado, stratum = estrato_df, 
+                 data_stratum = estratos_tbl, 
+                 n_stratum = n, parties = any_of(partidos), std_errors = FALSE)
+    total$state_abbr <- estado
+    total
+  })
+  
+obs_tbl <- obs_tbl %>% rename(prop_obs = prop) %>% 
+  left_join(estados_tbl)
+obs_tbl
+```
+
+```{r}
+est_no_cens <- estimaciones_sin_censura %>% 
+  left_join(obs_tbl, by = c("party", "NOMBRE_ESTADO")) %>% 
+  ungroup() %>% 
+  mutate(inf = prop - 2 * std_error, sup = prop + 2 * std_error) %>% 
+  mutate(cubre = ifelse(prop_obs >= inf & prop_obs <= sup, 1, 0))
+```
+
+
+```{r}
+est_no_cens %>% 
+  ungroup() %>% 
+  group_by(party, state_abbr, frac_m, estratificacion_num) %>% 
+  summarise(prop_obs = mean(prop_obs), ee_rep = sd(prop), 
+            sesgo = mean(prop - prop_obs),
+            std_error_media = mean(std_error),
+            cobertura = mean(cubre), 
+            precision = 2 * std_error_media) %>% 
+  filter(party %in% c("AMLO", "CAND_IND_02", "JAMK", "RAC")) %>% 
+  select(party, sesgo, precision, estratificacion_num, cobertura)
+```
+
+- Verificamos que el sesgo es prácticamente 0
+- La cobertura real es la nominal (95%)
+
+
+## Muestras censuradas por tiempo
+
+```{r}
+
+est_censuradas <- function(muestras_sim, prop_observada){
+  estimaciones_censuradas <-
+    muestras_sim %>%
+    group_by(id) %>%
+    filter(prop_obs <= prop_observada) %>%
+    split(.$id) %>%
+    future_map(~(ratio_estimation(.x, stratum = estrato_df,
+                    data_stratum = estratos_tbl, n_stratum = n,
+                    parties = any_of(partidos), std_errors = TRUE, B = 100)), 
+                    .id = "id",
+                    .options = furrr_options(seed = TRUE)) %>% 
+    bind_rows() %>% 
+    mutate(observado = prop_observada)
+  estimaciones_censuradas
+}
+estimaciones_cens <- map(c(0.5, 0.7, 0.9), ~ est_censuradas(muestras_sim, .x))
+```
+
+```{r}
+est_cens <- estimaciones_cens %>% 
+  bind_rows() %>% 
+  left_join(obs_tbl, by = "party") %>% 
+  mutate(inf = prop - 2 * std_error, sup = prop + 2 * std_error) %>% 
+  mutate(cubre = ifelse(prop_obs >= inf & prop_obs <= sup, 1, 0))
+resumen_censura <- est_cens %>% 
+  ungroup() %>% 
+  filter(party %in% c("AMLO", "JAMK", "RAC", "CAND_IND_02")) %>% 
+  group_by(party, observado) %>% 
+  summarise(prop_obs = mean(prop_obs), ee_rep = sd(prop), 
+            sesgo = mean(prop - prop_obs),
+            std_error_media = mean(std_error),
+            cobertura = mean(cubre), 
+            precision = 2 * std_error_media) %>% 
+  filter(party %in% c("AMLO", "CAND_IND_02", "JAMK", "RAC")) %>% 
+  select(party, observado, sesgo, precision, cobertura)
+```
+```{r}
+resumen_censura
+```
+
+
+
+```{r}
+#left_join(obs_tbl, by = "party") %>% 
+#  filter(party %in% c("AMLO", "JAMK", "RAC", "CAND_IND_02")) %>% 
+#  group_by(party, observado) %>% 
+#  summarise(prop_obs = mean(prop_obs), ee = sd(prop), sesgo_abs = abs(mean(prop - #prop_obs)))
+```
+```{r}
+ggplot(resumen_censura, aes(x = observado, y = abs(sesgo)/ (precision / 2), 
+                            group = party, colour = party)) +
+  geom_point() + geom_line() + ylim(0, 2.5)
+```
+
+```{r}
+ggplot(resumen_censura, aes(x = observado, y = cobertura, 
+                            group = party, colour = party)) +
+  geom_point() + geom_line() + geom_hline(yintercept = 0.95, colour = "salmon")
+```
