@@ -158,7 +158,7 @@ est_no_cens <- estimaciones_sin_censura %>%
 
 
 ```{r}
-est_no_cens %>% 
+resumen_no_cens <- est_no_cens %>% 
   ungroup() %>% 
   group_by(party, state_abbr, frac_m, estratificacion_num) %>% 
   summarise(prop_obs = mean(prop_obs), ee_rep = sd(prop), 
@@ -168,10 +168,18 @@ est_no_cens %>%
             precision = 2 * std_error_media) %>% 
   filter(party %in% c("AMLO", "CAND_IND_02", "JAMK", "RAC")) %>% 
   select(party, sesgo, precision, estratificacion_num, cobertura)
+resumen_no_cens
 ```
 
 - Verificamos que el sesgo es prácticamente 0
 - La cobertura real es la nominal (95%)
+
+```{r}
+ggplot(resumen_no_cens %>% filter(party == "AMLO"), 
+  aes(x = frac_m, y = precision, colour = factor(estratificacion_num),
+      group = estratificacion_num)) +
+  geom_point() + geom_line() +facet_wrap(~ state_abbr)
+```
 
 
 ## Muestras censuradas por tiempo
