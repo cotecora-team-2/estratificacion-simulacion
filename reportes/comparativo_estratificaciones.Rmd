@@ -55,38 +55,43 @@ estratos_tbl
 
 Seleccionamos muestras 
 
-```{r prep-muestras}
-frac_muestreo <- c(0.04, 0.06, 0.08)
-set.seed(8834)
-if(FALSE){
+```{r selec-muestras-fun}
 selec_muestra <- function(x, frac_m) {
-  marco_split <- marco_conf %>% 
-    split(list(marco_conf$state_abbr, marco_conf$estratificacion_num)) 
-  muestras <- map_df(marco_split, function(marco){ 
-      marco %>% select_sample_prop(stratum = estrato_df, frac = frac_m) %>%
+   marco_split <- marco_conf %>% 
+     split(list(marco_conf$state_abbr, marco_conf$estratificacion_num)) 
+   muestras <- map_df(marco_split, function(marco){ 
+      marco %>% 
+      select_sample_prop(stratum = estrato_df, frac = frac_m, min_stratum = 2) %>%
       mutate(id = x) %>% 
       mutate(frac_m = frac_m)
-    })
-  muestras_tiempos <- left_join(muestras, 
+      })
+   muestras_tiempos <- left_join(muestras, 
                                sims_tiempos %>% filter(id == x), 
                                by = c("CLAVE_CASILLA", "id"))
-  muestras_tiempos
+   muestras_tiempos
 }
-muestras_sim <- map_df(frac_muestreo, function(frac_m){
-  map_df(1:300, ~ selec_muestra(.x, frac_m)) %>% 
-  select(CLAVE_CASILLA, NOMBRE_ESTADO, ID_CASILLA, estratificacion_num, 
-         estrato_df, time, frac_m, id)
-})
+```
+
+
+```{r prep-muestras}
+set.seed(8834)
+generar_muestras <- FALSE
+if(generar_muestras){
+  muestras_sim <- map_df(frac_muestreo, function(frac_m){
+    map_df(1:300, ~ selec_muestra(.x, frac_m)) %>% 
+    select(CLAVE_CASILLA, NOMBRE_ESTADO, ID_CASILLA, estratificacion_num, 
+           estrato_df, time, frac_m, id)
+  })
+  saveRDS(muestras_sim, "../datos/muestras_sim_estratos.rds")
+} else {
+  muestras_sim <- readr::read_rds("../datos/muestras_sim_estratos.rds") 
 }
-#saveRDS(muestras_sim, "../datos/muestras_sim_estratos.rds")
-muestras_sim <- readr::read_rds("../datos/muestras_sim_estratos.rds") %>% 
-  rename(frac_m = frac)
 ```
 
 ```{r}
 muestras_sim <- left_join(muestras_sim, 
     conteo_2018_estados %>% 
-      select(CLAVE_CASILLA, NOMBRE_ESTADO, ID_CASILLA,  
+      select(CLAVE_CASILLA, NOMBRE_ESTADO, ID_CASILLA,
              PAN:LISTA_NOMINAL_CASILLA, AMLO:JAMK, tipo_casilla, tipo_seccion,
              .fittedPC1, .fittedPC2), 
   by = c("CLAVE_CASILLA", "NOMBRE_ESTADO"))
@@ -172,7 +177,7 @@ resumen_no_cens
 ```
 
 - Verificamos que el sesgo es prácticamente 0
-- La cobertura real es la nominal (95%)
+- La cobertura real es consistente con la nominal (95%) - nota: incrementar muestra
 
 ```{r}
 ggplot(resumen_no_cens %>% filter(party == "AMLO"), 
@@ -185,7 +190,6 @@ ggplot(resumen_no_cens %>% filter(party == "AMLO"),
 ## Muestras censuradas por tiempo
 
 ```{r}
-
 est_censuradas <- function(muestras_sim, prop_observada){
   estimaciones_censuradas <-
     muestras_sim %>%
@@ -201,7 +205,7 @@ est_censuradas <- function(muestras_sim, prop_observada){
     mutate(observado = prop_observada)
   estimaciones_censuradas
 }
-estimaciones_cens <- map(c(0.5, 0.7, 0.9), ~ est_censuradas(muestras_sim, .x))
+estimaciones_cens <- map(c(0.7), ~ est_censuradas(muestras_sim, .x))
 ```
 
 ```{r}
