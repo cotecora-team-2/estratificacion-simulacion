@@ -8,7 +8,7 @@ library(tidyverse)
 library(devtools)
 library(furrr)
 set.seed(6102)
-plan(multisession, workers = 10)
+plan(multisession, workers = 8)
 #devtools::install_github("cotecora-team-2/quickcountmx")
 library(quickcountmx)
 sims_tiempos <- read_rds(file = "../datos/simulaciones_completo.rds")
@@ -43,6 +43,9 @@ marco_conf <- map_df(estratif_conf, function(x){
 
 #sims_estado <- sims %>% filter(state_abbr == estado)
 nrow(marco_conf)
+```
+```{r}
+marco_conf <- filter(marco_conf, estratificacion_num %in% c(1, 4, 5, 9))
 ```
 
 
@@ -113,7 +116,7 @@ partidos <- c("AMLO", "JAMK", "RAC", "CAND_IND_01", "CAND_IND_02", "CNR", "VN")
 estimaciones_sin_censura <-
   muestras_sim %>%
   ungroup %>% 
-  filter(id < 11) %>% 
+  filter(id < 151) %>% 
   split(list(.$id, .$NOMBRE_ESTADO, .$estratificacion_num, .$frac_m)) %>%
   future_map_dfr(function(data){
     estratos_estado_tbl <- estratos_tbl %>%
@@ -124,12 +127,13 @@ estimaciones_sin_censura <-
     data <- data %>% mutate(estrato_df = as.character(estrato_df))
     rat_estimate <- ratio_estimation(data, stratum = estrato_df,
                             data_stratum = estratos_estado_tbl, n_stratum = n,
-                            parties = any_of(partidos), std_errors = TRUE, B = 100) %>% 
+                            parties = any_of(partidos), std_errors = TRUE, B = 50) %>% 
       add_column(NOMBRE_ESTADO = data$NOMBRE_ESTADO[1],
                  estratificacion_num = data$estratificacion_num[1],
                  id = data$id[1], frac_m = data$frac_m[1]) 
     rat_estimate
-  }, .options = furrr_options(seed = TRUE))
+  }, .options = furrr_options(seed = TRUE, scheduling = 10))
+readr::write_rds(estimaciones_sin_censura, "../datos/estimaciones_sin_censura_2.rds")
 ```
 
 
@@ -176,76 +180,87 @@ resumen_no_cens <- est_no_cens %>%
 resumen_no_cens
 ```
 
-- Verificamos que el sesgo es prácticamente 0
-- La cobertura real es consistente con la nominal (95%) - nota: incrementar muestra
-
 ```{r}
 ggplot(resumen_no_cens %>% filter(party == "AMLO"), 
   aes(x = frac_m, y = precision, colour = factor(estratificacion_num),
       group = estratificacion_num)) +
   geom_point() + geom_line() +facet_wrap(~ state_abbr)
 ```
+```{r}
+ggplot(resumen_no_cens, 
+  aes(x = frac_m, y = cobertura, colour = party,
+      group = estratificacion_num)) +
+  geom_jitter()  +facet_wrap(~ state_abbr) +
+  ylim(0.25, 1) + geom_hline(yintercept = 0.95)
+```
 
+
+- Verificamos que el sesgo es prácticamente 0
+- La cobertura real es consistente con la nominal (95%) 
+- Estratificaciones más finas dan mejores precisiones (una mejora de alrededor de 20-40% sobre la estratificación de distritos federales)
 
 ## Muestras censuradas por tiempo
 
-```{r}
-est_censuradas <- function(muestras_sim, prop_observada){
-  estimaciones_censuradas <-
-    muestras_sim %>%
-    group_by(id) %>%
-    filter(prop_obs <= prop_observada) %>%
-    split(.$id) %>%
-    future_map(~(ratio_estimation(.x, stratum = estrato_df,
-                    data_stratum = estratos_tbl, n_stratum = n,
-                    parties = any_of(partidos), std_errors = TRUE, B = 100)), 
-                    .id = "id",
-                    .options = furrr_options(seed = TRUE)) %>% 
-    bind_rows() %>% 
-    mutate(observado = prop_observada)
-  estimaciones_censuradas
-}
-estimaciones_cens <- map(c(0.7), ~ est_censuradas(muestras_sim, .x))
-```
 
 ```{r}
-est_cens <- estimaciones_cens %>% 
-  bind_rows() %>% 
-  left_join(obs_tbl, by = "party") %>% 
+plan(multisession, workers = 8)
+estimaciones_censura <-
+  muestras_sim %>%
+  ungroup %>% 
+  filter(id < 151) %>% 
+  split(list(.$id, .$NOMBRE_ESTADO, .$estratificacion_num, .$frac_m)) %>%
+  future_map_dfr(function(data){
+    estratos_estado_tbl <- estratos_tbl %>%
+      filter(state_abbr == data$state_abbr[1], 
+             estratificacion_num == data$estratificacion_num[1]) %>% 
+      ungroup %>% 
+      select(estrato_df, n) 
+    data <- data %>% mutate(estrato_df = as.character(estrato_df)) %>% 
+      filter(prop_obs <= 0.7)
+    rat_estimate <- ratio_estimation(data, stratum = estrato_df,
+                            data_stratum = estratos_estado_tbl, n_stratum = n,
+                            parties = any_of(partidos), std_errors = TRUE, B = 50) %>% 
+      add_column(NOMBRE_ESTADO = data$NOMBRE_ESTADO[1],
+                 estratificacion_num = data$estratificacion_num[1],
+                 id = data$id[1], frac_m = data$frac_m[1]) 
+    rat_estimate
+  }, .options = furrr_options(seed = TRUE, scheduling = 10))
+readr::write_rds(estimaciones_censura, "../datos/estimaciones_con_censura_2.rds")
+```
+
+
+```{r}
+est_cens <- estimaciones_censura %>% 
+  left_join(obs_tbl, by = c("party", "NOMBRE_ESTADO")) %>% 
+  ungroup() %>% 
   mutate(inf = prop - 2 * std_error, sup = prop + 2 * std_error) %>% 
   mutate(cubre = ifelse(prop_obs >= inf & prop_obs <= sup, 1, 0))
-resumen_censura <- est_cens %>% 
+resumen_cens <- est_cens %>% 
   ungroup() %>% 
-  filter(party %in% c("AMLO", "JAMK", "RAC", "CAND_IND_02")) %>% 
-  group_by(party, observado) %>% 
+  group_by(party, state_abbr, frac_m, estratificacion_num) %>% 
   summarise(prop_obs = mean(prop_obs), ee_rep = sd(prop), 
             sesgo = mean(prop - prop_obs),
             std_error_media = mean(std_error),
             cobertura = mean(cubre), 
             precision = 2 * std_error_media) %>% 
   filter(party %in% c("AMLO", "CAND_IND_02", "JAMK", "RAC")) %>% 
-  select(party, observado, sesgo, precision, cobertura)
-```
-```{r}
-resumen_censura
-```
-
-
-
-```{r}
-#left_join(obs_tbl, by = "party") %>% 
-#  filter(party %in% c("AMLO", "JAMK", "RAC", "CAND_IND_02")) %>% 
-#  group_by(party, observado) %>% 
-#  summarise(prop_obs = mean(prop_obs), ee = sd(prop), sesgo_abs = abs(mean(prop - #prop_obs)))
-```
-```{r}
-ggplot(resumen_censura, aes(x = observado, y = abs(sesgo)/ (precision / 2), 
-                            group = party, colour = party)) +
-  geom_point() + geom_line() + ylim(0, 2.5)
+  select(party, sesgo, precision, estratificacion_num, cobertura)
+resumen_cens
 ```
 
 ```{r}
-ggplot(resumen_censura, aes(x = observado, y = cobertura, 
-                            group = party, colour = party)) +
-  geom_point() + geom_line() + geom_hline(yintercept = 0.95, colour = "salmon")
+ggplot(resumen_cens %>% filter(party=="AMLO", estratificacion_num %in% c(1,4,5,9)), aes(x = frac_m, y = cobertura, 
+                         group = estratificacion_num, colour = factor(estratificacion_num))) +
+  geom_line() + facet_wrap(~state_abbr) + ylim(c(0.25,1)) +
+  geom_hline(yintercept = 0.95)
 ```
+
+
+```{r}
+ggplot(resumen_cens %>% filter(estratificacion_num %in% c(1, 4, 5, 9)), 
+  aes(x = frac_m, y = cobertura, group = party,
+      colour = factor(estratificacion_num))) +
+  geom_jitter()  +facet_wrap(~ state_abbr) +
+  ylim(0.25, 1) + geom_hline(yintercept = 0.95)
+```
+
