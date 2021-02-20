@@ -69,7 +69,7 @@ t5 <- cont_state_15 %>%
 
 cont_15 <- do.call("rbind", list(t1,t2,t3,t4,t5))
 
-path <- "../datos/stratification-data/inegi_distrito_seccion_20.csv"
+path <- "../datos/inegi_distrito_seccion_20.csv"
 var_inegi <- read.csv(path,sep=",")
 
 
@@ -87,4 +87,4 @@ conteo_15_inegi_10_edos_5_all <- select(conteo_15_inegi_10_edos_5_all, pca_aug) 
   unnest(cols = pca_aug) %>%
   select(-.fittedPC2,-.fittedPC3)
 
-write_csv(conteo_15_inegi_10_edos_5_all, file = "../datos/stratification-data/conteo_15_inegi_10_sin_imputar.csv")
+write_csv(conteo_15_inegi_10_edos_5_all, file = "../datos/conteo_15_inegi_10_sin_imputar.csv")
