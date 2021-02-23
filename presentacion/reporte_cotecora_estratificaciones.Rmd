@@ -496,6 +496,7 @@ con_censura_tbl %>%
   mutate(n = round(n)) %>% 
   mutate(n_obs = round(prop_observada * n)) %>% 
   formatear_tabla() %>% 
-  collapse_rows(columns = c(1, 2))
+  collapse_rows(columns = c(1, 2)) %>% 
+  footnote(general = "Precisión ajustada considera expansión de intervalo para cumplir cobertura nominal de 95% ", general_title = "Nota:")
 ```
 
