@@ -499,7 +499,9 @@ con_censura_tbl %>%
   footnote(general = "Precisión ajustada considera expansión de intervalo para cumplir cobertura nominal de 95% ", general_title = "Nota:")
 ```
 
-```{r}
+### Número de casillas por CAE
+
+```{r, echo = FALSE}
 marco <- read_csv("../datos/reporte/marco_ext.csv") %>% 
   select(iD_ESTADO, CLAVE_CASILLA, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD) %>% 
   mutate(cae = paste(iD_ESTADO, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD, 
