@@ -1,0 +1,26 @@
+---
+title: "Presentación estratificación"
+authors: "Equipo 2"
+output: html_document
+---
+
+* Se utilizaron los resultados de elecciones de gobernador 2015.
+
+
+* Distritos Federales 2020.
+* Listado Nominal, Índice de marginación, Índice de votación (primera componente
+principal creada a partir de votación de principales candidatos de las elecciones
+a gobernador de 2015).
+* Mínimo de casillas por estrato 70, en caso contrario se colapsará.
+
+# Procedimiento
+* Se extraen 100 muestras aleatorias de acuerdo con el diseño porpuesto, con
+distribución proporcional al tamaño de los estratos.
+* Se utiliza el estimador de razón combinado para producir las estimaciones
+para todos los candidatos.
+* En caso de estratos vacíos se colapsa a un estrato del mismo Distrito Federal.
+* Se evalúa: cobertura, longitud máxima de intervalo de estimación.
+* Estratificaciones
+* 3 escenarios: 50, 70 y 90% de la muestra, con tiempos de llegada de acuerdo al
+modelo de supervivencia discutido en sesiones anteriores.
+
