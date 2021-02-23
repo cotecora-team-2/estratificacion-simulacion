@@ -3,7 +3,10 @@ title: "Estratificación Conteo Rápido 2021"
 subtitle: "Chihuahua, Nayarit, Zacatecas, Colima"
 author: "M. Anzarut, F. González, I. Meza, T. Ortiz"
 date: "2/22/2021"
-output: html_document
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
 ---
 
 ```{r setup, include=FALSE}
@@ -102,7 +105,7 @@ est_sin_censura_sc <- readr::read_rds("../datos/reporte/estimaciones_sin_censura
 est_con_censura_sc <- readr::read_rds("../datos/reporte/estimaciones_con_censura_reporte_sin_chih.rds") %>% bind_rows() %>% left_join(obs_tbl)
 ```
 
-### Métodos
+## Métodos
 
 - Presentamos resultados para **200 muestras** distintas para cada estado, estratificación, y fracción de muestreo utilizada.
 - Para la estimación utilizamos el **estimador de razón combinado**, con error estándar estimado según remuestreo no paramétrico.
@@ -112,7 +115,7 @@ hora de llegada de información de 2018.
 - Para muestras censuradas, colapsamos estratos vacíos dentro de distritos federales.
 
 
-### Estratificaciones 
+## Estratificaciones exploradas
 
 Para las simulaciones usamos como marco la tabla de cómputos distritales 
 de 2018 para los estados de interés
@@ -145,14 +148,17 @@ tabla_estratos <- estratos_tbl %>%
 formatear_tabla(tabla_estratos)
 ```
 
-- En todos los casos, se colapsaron estratos del diseño 
+- En todos los casos, se **colapsaron estratos** del diseño 
 (usando las variables de derecha a 
 izquierda en la tabla de arriba) hasta conseguir un mínimo de 60 casillas por estrato. No se colapsaron distritos federales.
+- En todos los casos, la asignación de muestra es **proporcional** al tamaño del estrato.
 
-## Colima, Nayarit y Zacatecas
+
+# Colima, Nayarit y Zacatecas
 
 
-### Cobertura y precisión con muestra al 90%
+
+## Cobertura y precisión con muestra al 90%
 
 En este primer escenario evaluamos las estratificaciones, bajo distintos
 tamaños de muestra, haciendo el *supuesto
@@ -246,7 +252,7 @@ ggplot(con_censura_sc_tbl %>% filter(prop_observada == 0.9) %>%
 
 #### Conclusiones 1
 
-- Bajo muestra casi completa (90%), en algunos estados es posible mejorar la precisión
+- Bajo muestra casi completa (90%) es posible mejorar la precisión
 usando estratificaciones más finas que utilizan varios
 factores incluídos en el análisis.
  
@@ -261,8 +267,7 @@ sin_censura_sc_tbl %>% left_join(estrat_basica) %>%
   geom_line() + geom_point() + facet_wrap(~NOMBRE_ESTADO)
 ```
 
-Las coberturas son cercanas a las nominales de 95%, excluyendo quizá
-las asociadas a estratificaciones finas en Colima, Nayarit y Zacatecas
+Las coberturas son cercanas a las nominales de 95%:
 
 ```{r, echo = FALSE, fig.width = 6, fig.height=3}
 ggplot(con_censura_sc_tbl %>% filter(prop_observada == 0.9) %>% 
@@ -303,12 +308,12 @@ ggplot(con_censura_sc_tbl %>%
 - Las estratificaciones producen intervalos con cobertura real cercana nominal
 para un total de 90% de muestra observada.
 - Para Zacatecas y Nayarit la estratificación 6 (distrito federal x 2 grupos de marginación x 2 grupos
-de votos 2015) tiene buena precisión sobre los tres estados, y es más simple que la estratificación 8.
-- En Colima los candidatos son la estratificación 6 y la 4 (distrito federal x 2 grupos
+de votos 2015) tiene buena precisión, y es más simple que la estratificación 8.
+- En Colima buenas posibilidades son la estratificación 6 y la 4 (distrito federal x 2 grupos
 de lista nominal x 2 grupos de votos 2015).
 - En conclusión, escogemos la estratificacion 6 para estos tres estados.
 
-### Cobertura y precisión con muestras censuradas
+## Cobertura y precisión con muestras censuradas
 
 Ahora consideramos escenarios de mayor censura:
 
@@ -341,7 +346,7 @@ estados, (para todas las estratificaciones de manera similar), conforme el porce
 los estados, y otros modelos o correcciones son necesarias para construir
 intervalos que tengan cobertura real cercana a 95%
 
-### Propuesta de diseño 
+## Propuesta de diseño 
 
 ```{r, message=FALSE, warning = FALSE, echo=FALSE}
 num_estratos_tbl <- marco_conf %>% group_by(NOMBRE_ESTADO, estratificacion_num, estrato_df) %>% 
@@ -372,14 +377,63 @@ con_censura_sc_tbl %>%
   footnote(general = "Precisión ajustada considera expansión de intervalo para cumplir cobertura nominal de 95% ", general_title = "Nota:")
 ```
 
-```{r}
-estratos_colapsado %>% filter(estratificacion_num==6, state_abbr!="CHIH") %>% 
-  ungroup() %>% 
-  select(state_abbr, estrato_df_colapsado, n_casillas) %>% 
-  rename(Estado = state_abbr, estrato = estrato_df_colapsado) %>% 
-  formatear_tabla() %>% 
-  collapse_rows(columns = 1)
+## Número de casillas por CAE
+
+En la siguiente tabla mostramos el promedio de porcentaje de CAEs con 1,2,3 o 4 casillas.
+
+
+```{r, echo = FALSE, warning = FALSE, message=FALSE, cache = TRUE}
+marco <- read_csv("../datos/reporte/marco_ext.csv") %>% 
+  select(iD_ESTADO, CLAVE_CASILLA, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD) %>% 
+  mutate(cae = paste(iD_ESTADO, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD, 
+                     sep = "-")) %>% 
+  select(CLAVE_CASILLA, cae) 
+
+marco_caes <- marco_conf %>% 
+  filter(state_abbr != "CHIH", estratificacion_num == 1) %>% 
+  left_join(distinct(marco), by = "CLAVE_CASILLA") %>% 
+  mutate(estrato = paste(state_abbr, estrato_df))
+
+simular_caes <- function(frac_m){
+  muestra <- select_sample_prop(marco_caes, stratum = estrato, frac = frac_m)
+  muestra %>% 
+    count(state_abbr, cae) %>% 
+    group_by(state_abbr, n) %>% 
+    summarise(n_casos = n(), .groups = "drop") %>% 
+    group_by(state_abbr) %>% 
+    mutate(prop_casos = 100 * n_casos / sum(n_casos)) %>% 
+    ungroup()
+}
+
+
+replicar_sims <- function(frac_m = 0.15, runs = 200){
+  sims <- rerun(runs, simular_caes(frac_m = frac_m)) %>% 
+    set_names(., 1:runs) %>% 
+    bind_rows(.id = "run") 
+  sims %>% 
+    complete(n, nesting(state_abbr, run), fill = list(prop_casos = 0)) %>% 
+    group_by(state_abbr, n) %>% 
+    summarise(media_porc = round(mean(prop_casos), 1), 
+              sd_porc = round(sd(prop_casos)), .groups = "drop") %>% 
+    na.omit()
+}
+sims_porc <- map_df(set_names(c(0.10, 0.15, 0.20)), replicar_sims, .id = "frac")
 ```
+
+
+```{r, echo = FALSE, warning = FALSE, message=FALSE}
+sims_porc %>% 
+  select(-sd_porc) %>% 
+  filter(n < 5) %>% 
+  pivot_wider(names_from = n, values_from = media_porc) %>% 
+  arrange(state_abbr, frac) %>% 
+  select(state_abbr, everything()) %>% 
+  rename(Estado = state_abbr, frac_muestreo = frac) %>% 
+  formatear_tabla() %>% 
+  collapse_rows(columns = c(1)) %>% 
+  row_spec(c(3,6,8), background = "#fef2f0")
+```
+
 
 
 
@@ -422,7 +476,9 @@ ggplot(con_censura_filt_chih ) +
 ```
 
 
-## Chihuahua
+# Chihuahua (preliminar)
+
+## Cobertura y precisión con muestra al 90%
 
 En Chihuahua observamos un patrón similar con muestra observada de 90% en
 cuanto a precisión:
@@ -442,6 +498,9 @@ ggplot(con_censura_tbl %>% filter(prop_observada == 0.9) %>%
   scale_x_continuous(breaks = c(0.05, 0.10, 0.15)) +
   labs(subtitle = "Cuantil 0.95 de precisión sobre 4 candidatos")
 ```
+
+
+## Cobertura con muestras censuradas
 
 Sin embargo, la cobertura decae fuertemente conforme muestra observada decrece, a
 una tasa muy mayor a la observada en Nayarit, Colima y Zacatecas:
@@ -499,51 +558,14 @@ con_censura_tbl %>%
   footnote(general = "Precisión ajustada considera expansión de intervalo para cumplir cobertura nominal de 95% ", general_title = "Nota:")
 ```
 
-### Número de casillas por CAE
 
-```{r, echo = FALSE}
-marco <- read_csv("../datos/reporte/marco_ext.csv") %>% 
-  select(iD_ESTADO, CLAVE_CASILLA, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD) %>% 
-  mutate(cae = paste(iD_ESTADO, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD, 
-                     sep = "-")) %>% 
-  select(CLAVE_CASILLA, cae) 
+# Apéndice: Tamaño de muestra por estrato para NAY, COL y ZAC
 
-marco_caes <- marco_conf %>% 
-  filter(state_abbr != "CHIH", estratificacion_num == 1) %>% 
-  left_join(distinct(marco), by = "CLAVE_CASILLA") %>% 
-  mutate(estrato = paste(state_abbr, estrato_df))
-
-simular_caes <- function(frac_m){
-  muestra <- select_sample_prop(marco_caes, stratum = estrato, frac = frac_m)
-  muestra %>% 
-    count(state_abbr, cae) %>% 
-    group_by(state_abbr, n) %>% 
-    summarise(n_casos = n(), .groups = "drop") %>% 
-    group_by(state_abbr) %>% 
-    mutate(prop_casos = 100 * n_casos / sum(n_casos)) %>% 
-    ungroup()
-}
-
-
-replicar_sims <- function(frac_m = 0.15, runs = 50){
-  sims <- rerun(runs, simular_caes(frac_m = frac_m)) %>% 
-    set_names(., 1:runs) %>% 
-    bind_rows(.id = "run") 
-  sims %>% 
-    complete(n, nesting(state_abbr, run), fill = list(prop_casos = 0)) %>% 
-    group_by(state_abbr, n) %>% 
-    summarise(media_porc = round(mean(prop_casos), 1), 
-              sd_porc = round(sd(prop_casos)), .groups = "drop") %>% 
-    na.omit()
-}
-sims_porc <- map_df(set_names(c(0.10, 0.15, 0.20)), replicar_sims, .id = "frac") 
-sims_porc %>% 
-  select(-sd_porc) %>% 
-  filter(n < 5) %>% 
-  pivot_wider(names_from = n, values_from = media_porc) %>% 
-  arrange(state_abbr, frac) %>% 
-  select(state_abbr, everything()) %>% 
+```{r}
+estratos_colapsado %>% filter(estratificacion_num==6, state_abbr!="CHIH") %>% 
+  ungroup() %>% 
+  select(state_abbr, estrato_df_colapsado, n_casillas) %>% 
+  rename(Estado = state_abbr, estrato = estrato_df_colapsado) %>% 
   formatear_tabla() %>% 
-  collapse_rows(columns = c(1))
+  collapse_rows(columns = 1)
 ```
-
