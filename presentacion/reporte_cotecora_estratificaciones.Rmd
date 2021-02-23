@@ -36,6 +36,9 @@ partidos <- c("AMLO", "JAMK", "RAC", "CAND_IND_01", "CAND_IND_02", "CNR", "VN")
 ```{r cargar-datos, include = FALSE}
 data("conteo_2018")
 conteo_15 <- read_csv("../datos/conteo_15_inegi_10_sin_imputar.csv")
+estratos_colapsado <- read_csv("../datos/reporte/estratos_colapsados.csv") %>% 
+  group_by(state_abbr, estratificacion_num, estrato_df_colapsado) %>% 
+  summarise(n_casillas = sum(n), .groups = "drop")
 comp_15 <- conteo_15 %>%
   group_by(ID_ESTADO, ID_DISTRITO = ID_DTTO_FEDERAL_jul2020,
            SECCION = SECCION_jul2020) %>%
@@ -96,15 +99,18 @@ estratos_tbl <- marco_conf %>%
 ## cargar simulaciones
 est_sin_censura <- readr::read_rds("../datos/reporte/estimaciones_sin_censura_reporte.rds") %>% left_join(obs_tbl)
 est_con_censura <- readr::read_rds("../datos/reporte/estimaciones_con_censura_reporte.rds") %>% bind_rows() %>% left_join(obs_tbl)
+est_sin_censura_sc <- readr::read_rds("../datos/reporte/estimaciones_sin_censura_reporte_sin_chih.rds") %>% left_join(obs_tbl)
+est_con_censura_sc <- readr::read_rds("../datos/reporte/estimaciones_con_censura_reporte_sin_chih.rds") %>% bind_rows() %>% left_join(obs_tbl)
 ```
 
 ### Métodos
 
 - Presentamos resultados para **200 muestras** distintas para cada estado, estratificación, y fracción de muestreo utilizada.
 - Para la estimación utilizamos el **estimador de razón combinado**, con error estándar estimado según remuestreo no paramétrico.
-- Para censurar muestras utilizamos **modelos de supervivencia** ajustados para datos de 
+- Para censurar muestras por tiempo de llegada 
+utilizamos **modelos de supervivencia** ajustados para datos de 
 hora de llegada de información de 2018.
-- Para muestras censuradas, colapsamos estratos más finos dentro de distritos federales.
+- Para muestras censuradas, colapsamos estratos vacíos dentro de distritos federales.
 
 
 ### Estratificaciones 
@@ -140,7 +146,8 @@ tabla_estratos <- estratos_tbl %>%
 formatear_tabla(tabla_estratos)
 ```
 
-- En todos los casos, se colapsaron estratos (usando las variables de derecha a 
+- En todos los casos, se colapsaron estratos del diseño 
+(usando las variables de derecha a 
 izquierda en la tabla de arriba) hasta conseguir un mínimo de 60 casillas por estrato. No se colapsaron distritos federales.
 
 ## Colima, Nayarit y Zacatecas
@@ -159,11 +166,11 @@ fortificar <- function(datos, z = 2){
     mutate(precision = z * std_error, inf = prop - precision, 
            sup = prop + precision, 
            cubre = ifelse(prop_obs <= sup & prop_obs >= inf, 1, 0)) %>% 
-    filter(party %in% c("AMLO", "JAMK", "RAC", "CAND_IND_02"))
+    filter(party %in% c("AMLO", "JAMK", "RAC"))
     
 }
 ajustes_ancho <- tibble(prop_observada = c(0.7, 0.8, 0.9),
-                        mult = c(1.25, 1.15, 1.05))
+                        mult = c(1.4, 1.2, 1.00))
 ajustes_ancho_chih <- tibble(prop_observada = c(0.7, 0.8, 0.9),
                         mult = c(1.5, 1.25, 1.10))
 fortificar_ajustado <- function(datos, ajustes_ancho){
@@ -173,36 +180,45 @@ fortificar_ajustado <- function(datos, ajustes_ancho){
     mutate(precision = mult * 2 * std_error, inf = prop - precision, 
            sup = prop + precision, 
            cubre = ifelse(prop_obs <= sup & prop_obs >= inf, 1, 0)) %>% 
-    filter(party %in% c("AMLO", "JAMK", "RAC", "CAND_IND_02"))
+    filter(party %in% c("AMLO", "JAMK", "RAC"))
     
 }
 
 
 resumir_sims <- function(datos){
   datos %>% group_by(NOMBRE_ESTADO, estrat_num, frac_m, prop_observada) %>% 
-    summarise(precision_max = max(precision), cobertura = mean(cubre),
+    summarise(precision_max = quantile(precision, 0.95), cobertura = mean(cubre),
               .groups = "drop")
 }
 resumir_sims_partido <- function(datos){
   datos %>% group_by(NOMBRE_ESTADO, party, estrat_num, frac_m, prop_observada) %>% 
-    summarise(precision_max = max(precision), cobertura = mean(cubre),
+    summarise(precision_max = quantile(precision, 0.95), cobertura = mean(cubre),
               .groups = "drop")
 }
-sin_censura_tbl <- est_sin_censura %>% 
-  mutate(prop_observada = 1) %>% 
-  fortificar %>% 
-  resumir_sims
-sin_censura_partido_tbl <- est_sin_censura %>% 
-   mutate(prop_observada = 1) %>% 
-  fortificar %>% 
-  resumir_sims_partido
+#sin_censura_tbl <- est_sin_censura %>% 
+#  mutate(prop_observada = 1) %>% 
+#  fortificar %>% 
+#  resumir_sims
+#sin_censura_partido_tbl <- est_sin_censura %>% 
+#   mutate(prop_observada = 1) %>% 
+#  fortificar %>% 
+#  resumir_sims_partido
 con_censura_tbl <- est_con_censura %>% 
   fortificar %>% 
   resumir_sims
 con_censura_partido_tbl <- est_con_censura %>% 
   fortificar %>% 
   resumir_sims_partido
+con_censura_sc_tbl <- est_con_censura_sc %>% 
+  fortificar %>% 
+  resumir_sims
+con_censura_partido_sc_tbl <- est_con_censura_sc %>% 
+  fortificar %>% 
+  resumir_sims_partido
 con_censura_ajustado_tbl <- est_con_censura %>% 
+  fortificar_ajustado(ajustes_ancho) %>% 
+  resumir_sims
+con_censura_ajustado_sc_tbl <- est_con_censura_sc %>% 
   fortificar_ajustado(ajustes_ancho) %>% 
   resumir_sims
 con_censura_chih_ajustado_tbl <- est_con_censura %>% 
@@ -210,12 +226,12 @@ con_censura_chih_ajustado_tbl <- est_con_censura %>%
   resumir_sims()
 ```
 
-Las estratificaciones más finas presentan mejoras de máximo 
-10%-20% en reducción de la precisión en relación con la estratificación que
+Las estratificaciones más finas presentan mejoras en 
+ precisión en relación con la estratificación que
 sólo utiliza distritos federales:
 
 ```{r, echo = FALSE, fig.width = 6, fig.height=3}
-ggplot(con_censura_tbl %>% filter(prop_observada == 0.9) %>% 
+ggplot(con_censura_sc_tbl %>% filter(prop_observada == 0.9) %>% 
          filter(NOMBRE_ESTADO!="CHIHUAHUA"), 
   aes(x = frac_m, y = precision_max, colour = estrat_num)) +
   geom_hline(yintercept = 1.5, colour = "gray20") + 
@@ -225,24 +241,22 @@ ggplot(con_censura_tbl %>% filter(prop_observada == 0.9) %>%
   scale_color_manual(values = cb_palette) +
   xlab("Fracción de muestreo") +
   ylab("Precisión") +
-  scale_x_continuous(breaks = c(0.05, 0.10, 0.15)) +
-  labs(subtitle = "Máxima de precisión sobre 4 candidatos")
+  labs(subtitle = "Cuantil 0.95 de precisión sobre 4 candidatos")
 ```
+
 
 #### Conclusiones 1
 
 - Bajo muestra casi completa (90%), en algunos estados es posible mejorar la precisión
 usando estratificaciones más finas que utilizan varios
 factores incluídos en el análisis.
-- Incluso bajo muestras completas, una fracción de muestreo de 5% para
-estados chicos como Nayarit, Colima y Zacatecas producen precisiones
-muy bajas. 
+ 
 
 
-```{r, include=FALSE, echo = FALSE}
+```{r, include=FALSE, echo = FALSE, eval=FALSE}
 estrat_basica <- sin_censura_tbl %>% filter(estrat_num == 1) %>% 
   select(NOMBRE_ESTADO, frac_m, precision_base = precision_max)
-sin_censura_tbl %>% left_join(estrat_basica) %>% 
+sin_censura_sc_tbl %>% left_join(estrat_basica) %>% 
   mutate(mejora_precision = (precision_base - precision_max) / precision_base) %>% 
   ggplot(aes(x = frac_m, y = mejora_precision, colour = estrat_num)) +
   geom_line() + geom_point() + facet_wrap(~NOMBRE_ESTADO)
@@ -252,7 +266,7 @@ Las coberturas son cercanas a las nominales de 95%, excluyendo quizá
 las asociadas a estratificaciones finas en Colima, Nayarit y Zacatecas
 
 ```{r, echo = FALSE, fig.width = 6, fig.height=3}
-ggplot(con_censura_tbl %>% filter(prop_observada == 0.9) %>% 
+ggplot(con_censura_sc_tbl %>% filter(prop_observada == 0.9) %>% 
          filter(NOMBRE_ESTADO != "CHIHUAHUA")) +
   geom_ribbon(aes(x = frac_m, ymin = 0.92, ymax = 0.98), fill = "gray", alpha = 0.5) + 
   geom_hline(yintercept = 0.95, colour = "gray20") + 
@@ -261,23 +275,14 @@ ggplot(con_censura_tbl %>% filter(prop_observada == 0.9) %>%
   facet_wrap(~NOMBRE_ESTADO) +
   scale_color_manual(values = cb_palette) +
   xlab("Fracción de muestreo") +
-  ylab("Precisión máxima") +
-  scale_x_continuous(breaks = c(0.05, 0.10, 0.15)) +
+  ylab("Cobertura") +
   ylim(c(0.8, 1)) + 
-  labs(subtitle = "Cobertura promedio") 
+  labs(subtitle = "Cobertura media") 
 ```
 
-#### Conclusiones 2
 
-- Excluiremos de las posibles opciones fracciones de muestreo menores a 0.10
-en Colima, Nayarit y Zacatecas. Por arriba de fracciones de muestreo de 10%
-en estos estados la cobertura es consistente con la nominal bajo todas las
-estratificaciones.
-- Excluimos del análisis las estratificaciones 7 y 8 que producen coberturas
-relativamente bajas
-
-```{r, echo = FALSE, fig.width = 6, fig.height=4}
-ggplot(con_censura_tbl %>% 
+```{r, echo = FALSE, fig.width = 6, fig.height=4, eval=FALSE}
+ggplot(con_censura_sc_tbl %>% 
     filter(prop_observada == 0.9) %>% 
     filter(!(NOMBRE_ESTADO %in% c("ZACATECAS", "COLIMA", "NAYARIT") & frac_m == 0.05)) %>%
     filter(estrat_num %in% 1:6) %>% 
@@ -290,47 +295,54 @@ ggplot(con_censura_tbl %>%
   scale_color_manual(values = cb_palette) +
   xlab("Fracción de muestreo") +
   ylab("Precisión máxima") +
-  scale_x_continuous(breaks = c(0.05, 0.10, 0.15)) +
   ylim(0.8, 1) +
   labs(subtitle = "Cobertura media") 
 ```
-#### Conclusiones
 
-- Las estratificaciones producen intervalos con cobertura real cercana nominal.
-- La estratificación 6 (distrito federal x 2 grupos de marginación x 2 grupos
-de votos 2015) tiene mejor precisión.
+#### Conclusiones 2
+
+- Las estratificaciones producen intervalos con cobertura real cercana nominal
+para un total de 90% de muestra observada.
+- Para Zacatecas y Nayarit la estratificación 6 (distrito federal x 2 grupos de marginación x 2 grupos
+de votos 2015) tiene buena precisión sobre los tres estados, y es más simple que la estratificación 8.
+- En Colima los candidatos son la estratificación 6 y la 4 (distrito federal x 2 grupos
+de lista nominal x 2 grupos de votos 2015).
+- En conclusión, escogemos la estratificacion 6 para estos tres estados.
 
 ### Cobertura y precisión con muestras censuradas
 
 Ahora consideramos escenarios de mayor censura:
 
-```{r, echo = FALSE, fig.width = 6, fig.height=6}
-con_censura_filt <- con_censura_tbl %>% 
+```{r, echo = FALSE, fig.width = 7, fig.height=3}
+con_censura_filt <- con_censura_sc_tbl %>% 
   filter(!(NOMBRE_ESTADO %in% c("ZACATECAS", "COLIMA", "NAYARIT") & frac_m == 0.05)) %>% 
   filter(prop_observada < 1.0) %>% 
-  filter(estrat_num %in% 1:6) %>% 
+  filter(estrat_num %in% 6) %>% 
+  mutate(prop_observada = factor(prop_observada, levels = c(0.9, 0.8, 0.7))) %>% 
     filter(NOMBRE_ESTADO!="CHIHUAHUA")
 ggplot(con_censura_filt ) +
   geom_ribbon(aes(x = frac_m, ymin = 0.92, ymax = 0.98), fill = "gray", alpha = 0.4) + 
   geom_hline(yintercept = 0.95, colour = "gray20") + 
-  geom_point(aes(x = frac_m, y = cobertura, colour = estrat_num)) +
-    geom_line(aes(x = frac_m, y = cobertura, colour = estrat_num)) +
-  facet_grid(prop_observada ~ NOMBRE_ESTADO) +
+  geom_point(aes(x = frac_m, y = cobertura, colour = (prop_observada))) +
+    geom_line(aes(x = frac_m, y = cobertura, colour = (prop_observada))) +
+  facet_wrap( ~ NOMBRE_ESTADO) +
   scale_color_manual(values = cb_palette) +
   xlab("Fracción de muestreo") +
-  ylab("Cobertura promedio") +
-  scale_x_continuous(breaks = c(0.05, 0.10, 0.15)) +
-  ylim(c(0.8, 1)) +
-  labs(subtitle = "Cobertura por candidato") 
+  ylab("Cobertura") +
+  ylim(c(0.7, 1)) +
+  xlim(c(0.095, 0.305)) +
+  labs(subtitle = "Cobertura media (Estratificación 6)") 
 ```
 
-#### Conclusiones
+#### Conclusiones 3
 
 - La cobertura se degrada considerablemente a lo largo de todos los
-estados conforme el porcentaje de datos censurados aumenta. 
+estados, (para todas las estratificaciones de manera similar), conforme el porcentaje de datos censurados aumenta. 
 - Con 70% de muestra observada, la cobertura es baja en todos 
 los estados, y otros modelos o correcciones son necesarias para construir
 intervalos que tengan cobertura real cercana a 95%
+
+### Propuesta de diseño 
 
 ```{r, message=FALSE, warning = FALSE, echo=FALSE}
 num_estratos_tbl <- marco_conf %>% group_by(NOMBRE_ESTADO, estratificacion_num, estrato_df) %>% 
@@ -339,8 +351,8 @@ num_estratos_tbl <- marco_conf %>% group_by(NOMBRE_ESTADO, estratificacion_num, 
   group_by(NOMBRE_ESTADO) %>% summarise(num_estratos = n())
 
 frac_seleccionadas <- tibble(NOMBRE_ESTADO =  c("ZACATECAS", "COLIMA", "NAYARIT"),
-                    frac_m = c(0.10, 0.15, 0.15))
-con_censura_tbl %>% 
+                    frac_m = c(0.15, 0.20, 0.20))
+con_censura_sc_tbl %>% 
   filter(estrat_num == 6) %>% 
   inner_join(frac_seleccionadas) %>% 
   select(NOMBRE_ESTADO, frac_m, prop_observada, precision_max, cobertura) %>% 
@@ -353,15 +365,28 @@ con_censura_tbl %>%
   left_join(num_estratos_tbl) %>% 
   mutate(n_muestra = round(n)) %>% 
   mutate(n_obs = round(prop_observada * n)) %>% 
+  mutate(precision_ajustada = round(precision_ajustada, 1)) %>% 
   rename(Estado = NOMBRE_ESTADO) %>%
   select(Estado, frac_m, n_muestra, prop_observada, precision_ajustada, num_estratos, n_obs) %>% 
   formatear_tabla() %>% 
-  collapse_rows(columns = c(1)) 
+  collapse_rows(columns = c(1)) %>% 
+  footnote(general = "Precisión ajustada considera expansión de intervalo para cumplir cobertura nominal de 95% ", general_title = "Nota:")
+```
+
+```{r}
+estratos_colapsado %>% filter(estratificacion_num==6, state_abbr!="CHIH") %>% 
+  ungroup() %>% 
+  select(state_abbr, estrato_df_colapsado, n_casillas) %>% 
+  rename(Estado = state_abbr, estrato = estrato_df_colapsado) %>% 
+  formatear_tabla() %>% 
+  collapse_rows(columns = 1)
 ```
 
 
+
+
 ```{r, echo = FALSE, fig.width = 6, fig.height=4, eval=FALSE}
-con_censura_filt <- con_censura_ajustado_tbl %>% 
+con_censura_filt <- con_censura_ajustado_sc_tbl %>% 
   filter(!(NOMBRE_ESTADO %in% c("ZACATECAS", "COLIMA", "NAYARIT") & frac_m == 0.05)) %>% 
   filter(prop_observada < 0.9) %>% 
   filter(estrat_num %in% 1:6) %>% 
@@ -375,7 +400,6 @@ ggplot(con_censura_filt ) +
   scale_color_manual(values = cb_palette) +
   xlab("Fracción de muestreo") +
   ylab("Cobertura promedio") +
-  scale_x_continuous(breaks = c(0.05, 0.10, 0.15)) +
   labs(subtitle = "Cobertura por candidato")
 ```
 
@@ -398,15 +422,6 @@ ggplot(con_censura_filt_chih ) +
   labs(subtitle = "Cobertura por candidato") 
 ```
 
-### Estratos faltantes por censura
-
-```{r, eval=FALSE, echo = FALSE}
-est_con_censura %>% inner_join(frac_seleccionadas) %>% 
-  filter(estratificacion_num == 6) %>% 
-ggplot(aes(x = factor(prop_observada), y = estratos_vacios)) +
-  geom_boxplot() + facet_wrap(~NOMBRE_ESTADO)
-  
-```
 
 ## Chihuahua
 
@@ -415,7 +430,8 @@ cuanto a precisión:
 
 ```{r, echo = FALSE, fig.width = 6, fig.height=3}
 ggplot(con_censura_tbl %>% filter(prop_observada == 0.9) %>% 
-         filter(NOMBRE_ESTADO=="CHIHUAHUA"), 
+         filter(NOMBRE_ESTADO=="CHIHUAHUA") %>% 
+         filter(estrat_num != 8), 
   aes(x = frac_m, y = precision_max, colour = estrat_num)) +
   geom_hline(yintercept = 1.5, colour = "gray20") + 
   geom_line() +
@@ -423,38 +439,40 @@ ggplot(con_censura_tbl %>% filter(prop_observada == 0.9) %>%
   facet_wrap(~NOMBRE_ESTADO) +
   scale_color_manual(values = cb_palette) +
   xlab("Fracción de muestreo") +
-  ylab("Precisión máxima") +
+  ylab("Precisión") +
   scale_x_continuous(breaks = c(0.05, 0.10, 0.15)) +
-  labs(subtitle = "Precisión máxima sobre 4 candidatos")
+  labs(subtitle = "Cuantil 0.95 de precisión sobre 4 candidatos")
 ```
 
 Sin embargo, la cobertura decae fuertemente conforme muestra observada decrece, a
 una tasa muy mayor a la observada en Nayarit, Colima y Zacatecas:
 
-```{r, echo = FALSE, fig.width = 4, fig.height=4}
+```{r, echo = FALSE, fig.width = 6, fig.height=3}
 con_censura_filt <- con_censura_tbl %>% 
   filter(prop_observada < 1.0) %>% 
-  filter(estrat_num %in% 1:8) %>% 
+  filter(estrat_num %in% 1:7) %>% 
     filter(NOMBRE_ESTADO=="CHIHUAHUA")
 ggplot(con_censura_filt ) +
   geom_ribbon(aes(x = frac_m, ymin = 0.92, ymax = 0.98), fill = "gray", alpha = 0.4) + 
   geom_hline(yintercept = 0.95, colour = "gray20") + 
   geom_point(aes(x = frac_m, y = cobertura, colour = estrat_num)) +
     geom_line(aes(x = frac_m, y = cobertura, colour = estrat_num)) +
-  facet_grid(prop_observada ~ NOMBRE_ESTADO) +
+  facet_wrap(~ prop_observada) +
   scale_color_manual(values = cb_palette) +
   xlab("Fracción de muestreo") +
-  ylab("Precisión máxima") +
+  ylab("Cobertura") +
   scale_x_continuous(breaks = c(0.05, 0.10, 0.15)) +
   ylim(c(0.6, 1)) +
-  labs(subtitle = "Cobertura promedio sobre todos los candidatos") 
+  labs(subtitle = "Cobertura media sobre todos los candidatos") 
 ```
 
 #### Conclusiones preliminares
 
 - Incluso con 80% de muestra observada, la cobertura real está lejos de la nominal
-- Con 90% de la muestra, las estratificación 3 puede ser razonable en sesgo para 
+- Con 90% de la muestra, las estratificación 3 (distrito federal x 2 grupos de lista nominal) puede ser razonable en sesgo para 
 una fracción de muestreo menor a 0.10.
+ 
+### Propuestas de diseño (preliminares)
 
 ```{r, message=FALSE, warning = FALSE, echo=FALSE}
 num_estratos_tbl <- marco_conf %>% group_by(NOMBRE_ESTADO, estratificacion_num, estrato_df) %>% 
@@ -465,7 +483,7 @@ num_estratos_tbl <- marco_conf %>% group_by(NOMBRE_ESTADO, estratificacion_num, 
 frac_seleccionadas <- tibble(NOMBRE_ESTADO =  c("CHIHUAHUA"),
                     frac_m = c(0.05, 0.10))
 con_censura_tbl %>% 
-  filter(estrat_num %in% c(1,5,6)) %>% 
+  filter(estrat_num %in% c(1,3,6)) %>% 
   inner_join(frac_seleccionadas) %>% 
   select(NOMBRE_ESTADO, estrat_num, frac_m, prop_observada, precision_max, cobertura) %>% 
   left_join(ajustes_ancho) %>% 
