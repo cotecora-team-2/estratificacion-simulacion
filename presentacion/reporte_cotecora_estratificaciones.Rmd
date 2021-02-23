@@ -34,7 +34,6 @@ partidos <- c("AMLO", "JAMK", "RAC", "CAND_IND_01", "CAND_IND_02", "CNR", "VN")
 
 
 ```{r cargar-datos, include = FALSE}
-data("conteo_2018")
 conteo_15 <- read_csv("../datos/conteo_15_inegi_10_sin_imputar.csv")
 estratos_colapsado <- read_csv("../datos/reporte/estratos_colapsados.csv") %>% 
   group_by(state_abbr, estratificacion_num, estrato_df_colapsado) %>% 
@@ -497,5 +496,51 @@ con_censura_tbl %>%
   mutate(n_obs = round(prop_observada * n)) %>% 
   formatear_tabla() %>% 
   collapse_rows(columns = c(1, 2))
+```
+
+```{r}
+marco <- read_csv("../datos/reporte/marco_ext.csv") %>% 
+  select(iD_ESTADO, CLAVE_CASILLA, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD) %>% 
+  mutate(cae = paste(iD_ESTADO, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD, 
+                     sep = "-")) %>% 
+  select(CLAVE_CASILLA, cae) 
+
+marco_caes <- marco_conf %>% 
+  filter(state_abbr != "CHIH", estratificacion_num == 1) %>% 
+  left_join(distinct(marco), by = "CLAVE_CASILLA") %>% 
+  mutate(estrato = paste(state_abbr, estrato_df))
+
+simular_caes <- function(frac_m){
+  muestra <- select_sample_prop(marco_caes, stratum = estrato, frac = frac_m)
+  muestra %>% 
+    count(state_abbr, cae) %>% 
+    group_by(state_abbr, n) %>% 
+    summarise(n_casos = n(), .groups = "drop") %>% 
+    group_by(state_abbr) %>% 
+    mutate(prop_casos = 100 * n_casos / sum(n_casos)) %>% 
+    ungroup()
+}
+
+
+replicar_sims <- function(frac_m = 0.15, runs = 50){
+  sims <- rerun(runs, simular_caes(frac_m = frac_m)) %>% 
+    set_names(., 1:runs) %>% 
+    bind_rows(.id = "run") 
+  sims %>% 
+    complete(n, nesting(state_abbr, run), fill = list(prop_casos = 0)) %>% 
+    group_by(state_abbr, n) %>% 
+    summarise(media_porc = round(mean(prop_casos), 1), 
+              sd_porc = round(sd(prop_casos)), .groups = "drop") %>% 
+    na.omit()
+}
+sims_porc <- map_df(set_names(c(0.10, 0.15, 0.20)), replicar_sims, .id = "frac") 
+sims_porc %>% 
+  select(-sd_porc) %>% 
+  filter(n < 5) %>% 
+  pivot_wider(names_from = n, values_from = media_porc) %>% 
+  arrange(state_abbr, frac) %>% 
+  select(state_abbr, everything()) %>% 
+  formatear_tabla() %>% 
+  collapse_rows(columns = c(1))
 ```
 
