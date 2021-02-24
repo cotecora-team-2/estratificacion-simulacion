@@ -554,6 +554,8 @@ con_censura_tbl %>%
   left_join(num_estratos_tbl) %>% 
   mutate(n = round(n)) %>% 
   mutate(n_obs = round(prop_observada * n)) %>% 
+  ungroup() %>% 
+  select(-num_estratos) %>% 
   formatear_tabla() %>% 
   collapse_rows(columns = c(1, 2)) %>% 
   footnote(general = "Precisión ajustada considera expansión de intervalo para cumplir cobertura nominal de 95% ", general_title = "Nota:")
@@ -661,7 +663,7 @@ muestra_selec_cae %>%
   formatear_tabla()
 ```
 
-Y calculamos los porcentajes recibidos en la remesa de las 12:30 hrs.
+Y calculamos los porcentajes recibidos en la remesa de las 12:00 hrs.
 
 ```{r, echo = FALSE}
 # casillas en remesa, cae y hora de reporte
