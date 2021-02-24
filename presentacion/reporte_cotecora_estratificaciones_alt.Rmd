@@ -10,7 +10,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
 library(tidyverse)
 library(devtools)
 library(kableExtra)
@@ -383,8 +383,10 @@ En la siguiente tabla mostramos el promedio de porcentaje de CAEs con 1,2,3 o 4 
 
 
 ```{r, echo = FALSE, warning = FALSE, message=FALSE, cache = TRUE}
-marco <- read_csv("../datos/reporte/marco_ext.csv") %>% 
-  select(iD_ESTADO, CLAVE_CASILLA, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD) %>% 
+marco_ext <- read_csv("../datos/reporte/marco_ext.csv") %>% 
+  select(iD_ESTADO, CLAVE_CASILLA, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD)
+
+marco <- marco_ext %>% 
   mutate(cae = paste(iD_ESTADO, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD, 
                      sep = "-")) %>% 
   select(CLAVE_CASILLA, cae) 
@@ -556,10 +558,11 @@ con_censura_tbl %>%
   footnote(general = "Precisión ajustada considera expansión de intervalo para cumplir cobertura nominal de 95% ", general_title = "Nota:")
 ```
 
+# Apéndice 
 
-# Apéndice: Número de casillas por estrato para CHIH, NAY, COL y ZAC
+## Número de casillas por estrato para CHIH, NAY, COL y ZAC
 
-```{r, echo=FALSE}
+```{r, echo = FALSE}
 estratos_colapsado %>% filter(estratificacion_num==6, state_abbr!="CHIH") %>% 
   ungroup() %>% 
   select(state_abbr, estrato_df_colapsado, n_casillas) %>% 
@@ -567,6 +570,7 @@ estratos_colapsado %>% filter(estratificacion_num==6, state_abbr!="CHIH") %>%
   formatear_tabla() %>% 
   collapse_rows(columns = 1)
 ```
+
 ```{r, echo = FALSE}
 estratos_colapsado %>% filter(estratificacion_num==6, state_abbr=="CHIH") %>% 
   ungroup() %>% 
@@ -575,3 +579,140 @@ estratos_colapsado %>% filter(estratificacion_num==6, state_abbr=="CHIH") %>%
   formatear_tabla() %>% 
   collapse_rows(columns = 1)
 ```
+
+## Porcentaje de muestra recibida por estado (presidencial 2018)
+
+La gráfica de abajo muestra el porcentaje de muestra en la remesa de salida
+de 2018, para aquellos estados en los que no hubo elección de gobernador. 
+La fracción de muestreo es similar en todos los estados.
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=3.5, fig.height=3.5}
+library(tidyverse)
+
+# Remesa de salida (https://www.ine.mx/conteos-rapidos-procesos-electorales-federal-locales-2017-2018/)
+remesas <- read_delim("../datos/reporte/LISTADO_CASILLAS_2018.csv", delim = "|", skip = 1)
+# Muestra seleccionada (https://www.ine.mx/conteos-rapidos-procesos-electorales-federal-locales-2017-2018/)
+muestra_selec <- read_csv("../datos/reporte/4-ConteoRapido18MUESTRA-ELECCION-PRESIDENCIAL.csv") %>%
+  mutate(iD_ESTADO = as.numeric(iD_ESTADO))
+
+marco_casillas <- marco_ext %>% count(iD_ESTADO, name = "n_total")
+remesas_casillas <- remesas %>% count(iD_ESTADO, name = "n_remesa")
+muestra_casillas <- muestra_selec %>% count(iD_ESTADO, name = "n_seleccionada")
+
+llegada_fraccion <- marco_casillas %>%
+  left_join(remesas_casillas) %>%
+  left_join(muestra_casillas) %>%
+  mutate(fraccion = 100 * n_seleccionada / n_total,
+         porcent_llegada = n_remesa / n_seleccionada,
+         estatales = ifelse(iD_ESTADO %in% c(11, 7, 21, 9, 14, 17, 27, 30, 31),
+                            "estatal", "no estatal")) %>%
+  filter(!(iD_ESTADO %in% c(2, 26)))
+
+ggplot(llegada_fraccion, aes(x = fraccion, y = porcent_llegada,
+                             label = iD_ESTADO)) +
+  geom_boxplot() +
+  geom_text(color = "blue") +
+  labs(y = "%", title = "Porcentaje de muestra recibida") +
+  theme_minimal()
+```
+
+## Casillas asignadas y entregadas por CAE
+
+Para este ejercicio se utilizó el marco muestral de la elección presidencial 
+2018, y a remesa de las 12:30.
+
+```{r}
+remesas12 <- read_delim("../datos/reporte/REMESAS0100020000.txt",
+                      delim = "|", skip = 1)
+```
+De acuerdo al marco hubo 6,655 CAEs con una casilla, 521 CAEs con dos casillas 
+y 30 CAEs con tres.
+
+```{r, echo=FALSE}
+muestra_selec_cae <- muestra_selec %>% 
+  mutate(ID_DISTRITO_FEDERAL = as.numeric(ID_DISTRITO_FEDERAL)) %>% 
+  mutate(CAE = paste(iD_ESTADO, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD, 
+                     sep = "_")) %>% 
+  group_by(CAE) %>% 
+  mutate(n_casilla = n()) %>% 
+  ungroup() %>% 
+  select(CAE, n_casilla)
+
+muestra_selec_cae %>% 
+  group_by(CAE) %>% 
+  count(CAE, name = "caes_casilla") %>%
+  ungroup() %>% 
+  count(caes_casilla, name = "seleccion") %>% 
+  mutate(prop = round(100 * seleccion / sum(seleccion), 1)) %>% 
+  rename(n = caes_casilla, caes = seleccion) %>% 
+  formatear_tabla()
+```
+
+Cambiamos la unidad de observación a la casilla.
+
+```{r, echo=FALSE}
+muestra_selec_cae %>% 
+  count(n_casilla) %>% 
+  mutate(prop = round(100 * n / sum(n), 1)) %>% 
+  rename(casilla = n, n = n_casilla) %>% 
+  formatear_tabla()
+```
+
+Y calculamos los porcentajes recibidos en la remesa de las 12:30 hrs.
+
+```{r, echo = FALSE}
+# casillas en remesa, cae y hora de reporte
+remesas_caes <- remesas12 %>%
+  mutate(CAE = paste(iD_ESTADO, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD, sep = "_")) %>% 
+  mutate(timestamp = lubridate::ymd_hms(paste(ANIO, MES, DIA, HORA, MINUTOS, SEGUNDOS, sep = "-"))) %>% 
+  select(CAE, timestamp)
+
+diferencias <- muestra_selec_cae %>% 
+  count(CAE, name = "casillas_plan") %>% 
+  left_join(remesas_caes %>% count(CAE, name = "casillas_remesa")) %>% 
+  mutate(casillas_remesa = ifelse(is.na(casillas_remesa), 0, casillas_remesa), 
+         casillas_faltantes = casillas_plan - casillas_remesa)
+
+diferencias %>% 
+  group_by(casillas_plan) %>% 
+  summarise(
+    plan = sum(casillas_plan),
+    reportadas = sum(casillas_remesa),
+    faltantes = sum(casillas_faltantes), 
+    ) %>% 
+  mutate(porcent = round(100 * reportadas / plan)) %>% 
+  rename(n = casillas_plan, planeadas = plan) %>% 
+  formatear_tabla()
+```
+
+Notamos diferencias chicas entre 1 y 2 casillas asignadas.
+
+Repetimos cortando a las 10:30 pm y obtenemos la siguiente tabla.
+
+```{r}
+remesas_caes_2230 <- remesas_caes %>% 
+  filter(timestamp < as.POSIXct("2018-07-01 22:31:00 UTC", tz = "UTC"))
+diferencias_2230 <- muestra_selec_cae %>% 
+  count(CAE, name = "casillas_plan") %>% 
+  left_join(remesas_caes_2230 %>% count(CAE, name = "casillas_remesa")) %>% 
+  mutate(casillas_remesa = ifelse(is.na(casillas_remesa), 0, casillas_remesa), 
+         casillas_faltantes = casillas_plan - casillas_remesa)
+
+diferencias_2230 %>% 
+  group_by(casillas_plan) %>% 
+  summarise(
+    plan = sum(casillas_plan),
+    reportadas = sum(casillas_remesa),
+    faltantes = sum(casillas_faltantes), 
+    ) %>% 
+  mutate(porcent = round(100 * reportadas / plan)) %>% 
+  formatear_tabla()
+```
+
+```{r, eval=FALSE}
+diferencias_2230 %>% 
+  group_by(casillas_plan) %>% 
+  summarise(completo = round(100 * mean(casillas_remesa == casillas_plan)))
+```
+
