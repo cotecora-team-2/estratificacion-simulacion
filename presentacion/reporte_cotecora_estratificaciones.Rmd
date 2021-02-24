@@ -111,7 +111,7 @@ est_con_censura_sc <- readr::read_rds("../datos/reporte/estimaciones_con_censura
 - Para la estimación utilizamos el **estimador de razón combinado**, con error estándar estimado según remuestreo no paramétrico.
 - Para censurar muestras por tiempo de llegada 
 utilizamos **modelos de supervivencia** ajustados para datos de 
-hora de llegada de información de 2018.
+hora de llegada de información de 2018. [Reporte tiempos de llegada](https://sim-llegadas-3e5e7b.netlify.app/)
 - Para muestras censuradas, colapsamos estratos vacíos dentro de distritos federales.
 
 
@@ -485,8 +485,7 @@ cuanto a precisión:
 
 ```{r, echo = FALSE, fig.width = 6, fig.height=3}
 ggplot(con_censura_tbl %>% filter(prop_observada == 0.9) %>% 
-         filter(NOMBRE_ESTADO=="CHIHUAHUA") %>% 
-         filter(estrat_num != 8), 
+         filter(NOMBRE_ESTADO=="CHIHUAHUA"), 
   aes(x = frac_m, y = precision_max, colour = estrat_num)) +
   geom_hline(yintercept = 1.5, colour = "gray20") + 
   geom_line() +
@@ -508,7 +507,7 @@ una tasa muy mayor a la observada en Nayarit, Colima y Zacatecas:
 ```{r, echo = FALSE, fig.width = 6, fig.height=3}
 con_censura_filt <- con_censura_tbl %>% 
   filter(prop_observada < 1.0) %>% 
-  filter(estrat_num %in% 1:7) %>% 
+  filter(estrat_num %in% 1:8) %>% 
     filter(NOMBRE_ESTADO=="CHIHUAHUA")
 ggplot(con_censura_filt ) +
   geom_ribbon(aes(x = frac_m, ymin = 0.92, ymax = 0.98), fill = "gray", alpha = 0.4) + 
@@ -559,7 +558,7 @@ con_censura_tbl %>%
 ```
 
 
-# Apéndice: Tamaño de muestra por estrato para CHIH, NAY, COL y ZAC
+# Apéndice: Número de casillas por estrato para CHIH, NAY, COL y ZAC
 
 ```{r, echo = FALSE}
 estratos_colapsado %>% filter(estratificacion_num==6, state_abbr!="CHIH") %>% 
