@@ -539,7 +539,7 @@ num_estratos_tbl <- marco_conf %>% group_by(NOMBRE_ESTADO, estratificacion_num, 
   group_by(NOMBRE_ESTADO) %>% summarise(num_estratos = n())
 
 frac_seleccionadas <- tibble(NOMBRE_ESTADO =  c("CHIHUAHUA"),
-                    frac_m = c(0.06, 0.06))
+                    frac_m = c(0.06, 0.08))
 con_censura_tbl %>% 
   filter(estrat_num %in% c(1,3,6)) %>% 
   inner_join(frac_seleccionadas) %>% 
