@@ -35,40 +35,41 @@ generar_muestras_con_censura <- function(marco_muestral,
 set.seed(2021)
 # Michoacan
 muestras_michoacan <- generar_muestras_con_censura(michoacan,
-                                                   n = 1000,
+                                                   n = 100,
                                                    fracc_muestreo = 0.06,
                                                    censuras = c(.5,.6,.7,.8,.9),
                                                    variable_censura = PRD)
+saveRDS(muestras_michoacan, file = "datos/muestras/michoacan.rds")
 # Chihuahua
 muestras_chihuahua <- generar_muestras_con_censura(chihuahua,
-                                                   n = 1000,
+                                                   n = 100,
                                                    fracc_muestreo = 0.06,
                                                    censuras =  c(.5,.6,.7,.8,.9),
                                                    variable_censura = PAN)
+saveRDS(muestras_chihuahua, file = "datos/muestras/chihuahua.rds")
 # Colima
 muestras_colima <- generar_muestras_con_censura(colima,
-                                                n = 1000,
+                                                n = 100,
                                                 fracc_muestreo = 0.06,
                                                 censuras =  c(.5,.6,.7,.8,.9),
                                                 total_votos = VOTOS_TOTAL_17ene16,
                                                 variable_censura = PRI)
+saveRDS(muestras_colima, file = "datos/muestras/colima.rds")
 # Zacatecas
 muestras_zacatecas <- generar_muestras_con_censura(zacatecas,
-                                                   n = 1000,
+                                                   n = 100,
                                                    fracc_muestreo = 0.06,
                                                    censuras = c(.5,.6,.7,.8,.9),
                                                    total_votos = VOTOS_TOTAL_17ene16,
                                                    variable_censura = PRI)
+saveRDS(muestras_zacatecas, file = "datos/muestras/zacatecas.rds")
 # Nayarit
 muestras_nayarit <- generar_muestras_con_censura(nayarit,
-                                                 n = 1000,
+                                                 n = 100,
                                                  fracc_muestreo = 0.06,
                                                  censuras =  c(.5,.6,.7,.8,.9),
                                                  total_votos = VOTOS_TOTAL_17ene16,
                                                  variable_censura = PAN)
-save(file = "muestras.RData",
-     list = c("muestras_michoacan",
-              "muestras_chihuahua",
-              "muestras_colima",
-              "muestras_zacatecas",
-              "muestras_nayarit"))
+saveRDS(muestras_nayarit, file = "datos/muestras/nayarit.rds")
+
+
