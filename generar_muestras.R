@@ -36,7 +36,7 @@ set.seed(2021)
 # Michoacan
 muestras_michoacan <- generar_muestras_con_censura(michoacan,
                                                    n = 100,
-                                                   fracc_muestreo = 0.06,
+                                                   fracc_muestreo = 0.065,
                                                    censuras = c(.5,.6,.7,.8,.9),
                                                    variable_censura = PRD)
 saveRDS(muestras_michoacan, file = "datos/muestras/michoacan.rds")
@@ -50,7 +50,7 @@ saveRDS(muestras_chihuahua, file = "datos/muestras/chihuahua.rds")
 # Colima
 muestras_colima <- generar_muestras_con_censura(colima,
                                                 n = 100,
-                                                fracc_muestreo = 0.06,
+                                                fracc_muestreo = 0.2,
                                                 censuras =  c(.5,.6,.7,.8,.9),
                                                 total_votos = VOTOS_TOTAL_17ene16,
                                                 variable_censura = PRI)
@@ -58,7 +58,7 @@ saveRDS(muestras_colima, file = "datos/muestras/colima.rds")
 # Zacatecas
 muestras_zacatecas <- generar_muestras_con_censura(zacatecas,
                                                    n = 100,
-                                                   fracc_muestreo = 0.06,
+                                                   fracc_muestreo = 0.15,
                                                    censuras = c(.5,.6,.7,.8,.9),
                                                    total_votos = VOTOS_TOTAL_17ene16,
                                                    variable_censura = PRI)
@@ -66,7 +66,7 @@ saveRDS(muestras_zacatecas, file = "datos/muestras/zacatecas.rds")
 # Nayarit
 muestras_nayarit <- generar_muestras_con_censura(nayarit,
                                                  n = 100,
-                                                 fracc_muestreo = 0.06,
+                                                 fracc_muestreo = .2,
                                                  censuras =  c(.5,.6,.7,.8,.9),
                                                  total_votos = VOTOS_TOTAL_17ene16,
                                                  variable_censura = PAN)
