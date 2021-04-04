@@ -38,9 +38,7 @@ partidos <- c("AMLO", "JAMK", "RAC", "CAND_IND_01", "CAND_IND_02", "CNR", "VN")
 
 ```{r cargar-datos, include = FALSE}
 conteo_15 <- read_csv("../datos/conteo_15_inegi_10_sin_imputar.csv")
-estratos_colapsado <- read_csv("../datos/reporte/estratos_colapsados_con_chih.csv") %>% 
-  group_by(state_abbr, estratificacion_num, estrato_df_colapsado) %>% 
-  summarise(n_casillas = sum(n), .groups = "drop")
+estratos_colapsado <- read_csv("../datos/reporte/estratos_colapsados_con_chih.csv") 
 comp_15 <- conteo_15 %>%
   group_by(ID_ESTADO, ID_DISTRITO = ID_DTTO_FEDERAL_jul2020,
            SECCION = SECCION_jul2020) %>%
@@ -76,7 +74,8 @@ marco_conf <- map_df(estratif_conf, function(x){
   mutate(indice_votos = ntile(comp_votos, num_gpos_votos)) %>%
   mutate(tam_ln = ntile(LISTA_NOMINAL_CASILLA, num_gpos_ln)) %>%
   mutate(estrato_df = interaction(ID_DISTRITO, indice_grupo, indice_votos, 
-                                  tam_ln))
+                                  tam_ln)) %>% 
+  left_join(estratos_colapsado)
 })
 # Valores observados
 estados_tbl <- conteo_2018 %>% select(NOMBRE_ESTADO, state_abbr) %>% unique
@@ -84,8 +83,8 @@ obs_tbl <-
   map_df(estados, function(estado){
     marco_estado <- marco_conf %>% 
       filter(state_abbr == estado, estratificacion_num == 1) 
-    estratos_tbl <- marco_estado %>% group_by(estrato_df) %>% count()
-    total <- ratio_estimation(marco_estado, stratum = estrato_df, 
+    estratos_tbl <- marco_estado %>% group_by(estrato_df_colapsado) %>% count()
+    total <- ratio_estimation(marco_estado, stratum = estrato_df_colapsado, 
                  data_stratum = estratos_tbl, 
                  n_stratum = n, parties = any_of(partidos), std_errors = FALSE)
     total$state_abbr <- estado
@@ -96,7 +95,7 @@ obs_tbl <- obs_tbl %>% rename(prop_obs = prop) %>%
   left_join(estados_tbl)
 #
 estratos_tbl <- marco_conf %>% 
-  group_by(state_abbr, indice_grupo, indice_votos, tam_ln, estratificacion_num, estrato_df) %>% 
+  group_by(state_abbr, indice_grupo, indice_votos, tam_ln, estratificacion_num, estrato_df_colapsado) %>% 
   count()
 ## cargar simulaciones
 est_sin_censura <- readr::read_rds("../datos/reporte/estimaciones_sin_censura_reporte_solo_chih.rds") %>% left_join(obs_tbl)
@@ -349,7 +348,7 @@ intervalos que tengan cobertura real cercana a 95%
 ## Propuesta de diseño 
 
 ```{r, message=FALSE, warning = FALSE, echo=FALSE}
-num_estratos_tbl <- marco_conf %>% group_by(NOMBRE_ESTADO, estratificacion_num, estrato_df) %>% 
+num_estratos_tbl <- marco_conf %>% group_by(NOMBRE_ESTADO, estratificacion_num, estrato_df_colapsado) %>% 
   tally() %>% 
   filter(estratificacion_num == 6, NOMBRE_ESTADO!="CHIHUAHUA") %>% 
   group_by(NOMBRE_ESTADO) %>% summarise(num_estratos = n())
@@ -394,7 +393,7 @@ marco <- marco_ext %>%
 marco_caes <- marco_conf %>% 
   filter(state_abbr != "CHIH", estratificacion_num == 1) %>% 
   left_join(distinct(marco), by = "CLAVE_CASILLA") %>% 
-  mutate(estrato = paste(state_abbr, estrato_df))
+  mutate(estrato = paste(state_abbr, estrato_df_colapsado))
 
 simular_caes <- function(frac_m){
   muestra <- select_sample_prop(marco_caes, stratum = estrato, frac = frac_m)
@@ -534,7 +533,7 @@ una fracción de muestreo menor a 0.10.
 ### Propuestas de diseño (preliminares)
 
 ```{r, message=FALSE, warning = FALSE, echo=FALSE}
-num_estratos_tbl <- marco_conf %>% group_by(NOMBRE_ESTADO, estratificacion_num, estrato_df) %>% 
+num_estratos_tbl <- marco_conf %>% group_by(NOMBRE_ESTADO, estratificacion_num, estrato_df_colapsado) %>% 
   tally() %>% 
   filter(estratificacion_num == 3, NOMBRE_ESTADO=="CHIHUAHUA") %>% 
   group_by(NOMBRE_ESTADO) %>% summarise(num_estratos = n())
@@ -567,7 +566,11 @@ con_censura_tbl %>%
 ## Número de casillas por estrato para CHIH, NAY, COL y ZAC
 
 ```{r, echo = FALSE}
-estratos_colapsado %>% filter(estratificacion_num==6, state_abbr!="CHIH") %>% 
+
+
+estratos_colapsado %>% group_by(state_abbr, estratificacion_num, estrato_df_colapsado) %>% 
+  summarise(n_casillas = sum(n), .groups = "drop") %>%
+  filter(estratificacion_num==6, state_abbr!="CHIH") %>% 
   ungroup() %>% 
   select(state_abbr, estrato_df_colapsado, n_casillas) %>% 
   rename(Estado = state_abbr, estrato = estrato_df_colapsado) %>% 
@@ -576,7 +579,9 @@ estratos_colapsado %>% filter(estratificacion_num==6, state_abbr!="CHIH") %>%
 ```
 
 ```{r, echo = FALSE}
-estratos_colapsado %>% filter(estratificacion_num==6, state_abbr=="CHIH") %>% 
+estratos_colapsado %>% group_by(state_abbr, estratificacion_num, estrato_df_colapsado) %>% 
+  summarise(n_casillas = sum(n), .groups = "drop") %>%
+  filter(estratificacion_num==6, state_abbr=="CHIH") %>% 
   ungroup() %>% 
   select(state_abbr, estrato_df_colapsado, n_casillas) %>% 
   rename(Estado = state_abbr, estrato = estrato_df_colapsado) %>% 
