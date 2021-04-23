@@ -71,10 +71,30 @@ walk(sims_lista, ~write_csv(.x, paste0("./sims/votacion_sim_", .x$ID_ESTADO[1], 
 ```{r}
 map(sims_lista, function(df){
   df %>% ungroup %>% 
-    select(-estrato) %>% 
-    summarise(across(where(is.numeric), sum)) %>% 
+    select(-estrato) %>%
+    group_by(ID_ESTADO) %>% 
+    summarise(across(where(is.numeric), sum))%>% 
     pivot_longer(cols = c(-ID_ESTADO), names_to = "partido") %>% 
     arrange(value)
 })
 ```
+```{r}
+params_muestra <- list(frac_m = c(0.20, 0.06, 0.065, 0.20, 0.15), 
+     seed = c(263131, 7087177, 470742, 747552, 366220)) %>% 
+  transpose
+names(params_muestra) <-c(6, 8, 16, 18, 32)
+muestras_lista <- sims_lista %>% map(function(df){
+  estado <- as.character((df$ID_ESTADO)[1])
+  seed <- params_muestra[[estado]]$seed
+  frac_m <- params_muestra[[estado]]$frac_m
+  muestra <- select_sample_prop(df, stratum = estrato, frac = frac_m,
+                                seed = seed)
+  muestra
+})
+```
+
+```{r}
+walk(muestras_lista,  ~write_csv(.x, paste0("./sims/muestra_sim_", .x$ID_ESTADO[1], ".csv") ))
+```
+
 
