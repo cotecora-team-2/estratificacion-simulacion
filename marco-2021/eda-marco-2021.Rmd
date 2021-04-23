@@ -1,0 +1,113 @@
+---
+title: "Marco 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+library(quickcountmx)
+library(tidyverse)
+library(gt)
+```
+
+### Diferencias en distritos federales
+
+
+```{r}
+casillas_2021 <- read_delim("data/19_UBICACION_CASILLAS_APROBADAS_CG_20210414_TSecc_ZonaArea.txt",
+                       "|", escape_double = FALSE, trim_ws = TRUE)
+edos_id <- c(6, 8, 16, 18, 32)
+
+casillas_edos_2021 <- casillas_2021 %>% 
+    filter(ID_ESTADO %in% edos_id) %>% 
+    mutate(SECCION = as.character(SECCION) %>% str_pad(4, pad = "0")) %>% 
+    mutate(ID_DISTRITO = ID_DISTRITO_FEDERAL)
+
+data(conteo_2018)
+conteo_edos_2018 <- conteo_2018 %>% 
+    filter(ID_ESTADO %in% edos_id) %>% 
+    mutate(CASILLA = as.numeric(factor(CASILLA, levels = c("Urbana", "Rural"))))
+
+```
+
+* Mismos distritos federales, con aprox mismo número de casillas.
+
+* 600 casillas nuevas en los 5 estados.
+
+```{r}
+edo_df_2018 <- conteo_edos_2018 %>% 
+    count(ID_ESTADO, ID_DISTRITO, name = "n_2018")
+edo_df <- casillas_edos_2021 %>% 
+    count(ID_ESTADO, ID_DISTRITO, name = "n_2021") %>% 
+    full_join(edo_df_2018) %>% 
+    mutate(dif_percent = round(100 * (n_2021 - n_2018) / n_2018))
+
+edo_df %>% 
+    janitor::adorn_totals() %>% 
+    group_by(ID_ESTADO) %>% 
+    gt::gt()
+```
+
+
+## Diferencias entre secciones:
+
+```{r}
+edo_seccion_2018 <- conteo_edos_2018 %>% 
+    count(ID_ESTADO, ID_DISTRITO, SECCION, name = "n_2018")
+
+edo_seccion_2021 <- casillas_edos_2021 %>% 
+    count(ID_ESTADO, ID_DISTRITO = ID_DISTRITO_FEDERAL, SECCION, name = "n_2021") 
+
+edo_seccion_nuevas <- edo_seccion_2021 %>% 
+    anti_join(edo_seccion_2018) %>% 
+    count(ID_ESTADO, ID_DISTRITO, name = "nuevas")
+
+edo_seccion_desaparecidas <- edo_seccion_2018 %>% 
+    anti_join(edo_seccion_2021) %>% 
+    count(ID_ESTADO, ID_DISTRITO, name = "desaparecidas")
+```
+
+
+
+```{r}
+edo_seccion_nuevas %>% 
+    left_join(edo_seccion_desaparecidas) %>% 
+    left_join(edo_seccion_2021 %>% count(ID_ESTADO, ID_DISTRITO, 
+                                         name = "total_2021")) %>% 
+    left_join(edo_seccion_2018 %>% count(ID_ESTADO, ID_DISTRITO, 
+                                         name = "total_2018")) %>% 
+    group_by(ID_ESTADO) %>% 
+    gt()
+```
+
+###  Observaciones
+
+* Secciones desaparecidas total: 42
+
+* Secciones nuevas total: 130
+
+## Unión 2018-2021
+
+```{r}
+data("nay_2015")
+data("zac_2015")
+
+nay_2015 %>% 
+    select(ID_ESTADO, NOMBRE_ESTADO, ID_DISTRITO, SECCION, CASILLA, indice_grupo) %>% 
+    distinct() %>% 
+
+conteo_edos_sub_2018 <- conteo_edos_2018 %>% 
+    select(ID_ESTADO, NOMBRE_ESTADO, ID_DISTRITO, SECCION, CASILLA, .fittedPC1, 
+           TIPO_CASILLA = tipo_casilla) %>% 
+    distinct()
+casillas_edos_marco_2021 <- casillas_edos_2021 %>% 
+    left_join(conteo_edos_sub_2018, by = c("ID_ESTADO", "NOMBRE_ESTADO", "ID_DISTRITO",
+                                           "SECCION", "CASILLA", "TIPO_CASILLA"))
+sum(is.na(casillas_edos_marco_2021$.fittedPC1))
+```
+
