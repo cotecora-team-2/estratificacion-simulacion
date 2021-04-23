@@ -11,6 +11,9 @@ knitr::opts_chunk$set(echo = TRUE)
 library(quickcountmx)
 library(tidyverse)
 marco_2021 <- read_rds("../datos/marco_2021.rds")
+marco_2021 <- marco_2021 %>% 
+  ungroup() %>% 
+  mutate(ln = ifelse(LISTA_NOMINAL_CASILLA==0, 1200, LISTA_NOMINAL_CASILLA))
 ```
 
 ```{r}
@@ -50,7 +53,7 @@ data_stratum_tbl <- marco_2021 %>%
 ```{r}
 ratio_estimation(muestra_m, stratum = estrato, n_stratum = n, 
                  data_stratum = data_stratum_tbl, 
-                 parties = AICA:VMA, B = 200)
+                 parties = AICA:VMA, B = 100)
 ```
 
 ```{r}
@@ -59,6 +62,7 @@ ajuste <- hb_estimation(muestra_m, stratum = estrato, id_station = no_casilla,
               parties = AICA:VMA,
               covariates = comp_marg_imp, num_iter = 300, chains = 4, part = TRUE)
 ```
+
 ```{r}
 ajuste$estimates
 ```
