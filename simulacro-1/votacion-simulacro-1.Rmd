@@ -1,0 +1,80 @@
+---
+title: "Simulacro 1 - crear votacion ficticia"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(quickcountmx)
+library(tidyverse)
+candidatos <- read_csv("datos/estados_candidatos_partidos_2021.csv")
+marco_2021 <- read_rds("../datos/marco_2021.rds")
+```
+
+```{r}
+rdirichlet = function( n = 10, alpha = c( 1, 1 ) ) {
+    length_alpha = length( alpha )
+    sample       = matrix( stats::rgamma( length_alpha * n, alpha ), ncol = length_alpha, byrow = TRUE )
+    
+    return(  sample / apply( sample, 1, sum ) )
+}
+set.seed(3421)
+candidatos_prop <- candidatos %>% 
+  group_by(ID_ESTADO) %>% 
+  mutate(prop = rdirichlet(1, alpha = c(rep(1, n()-2), c(0.5, 0.5))) %>% as.numeric)
+```
+
+```{r}
+candidatos_prop %>% group_by(ID_ESTADO) %>% summarise(suma = sum(prop))
+```
+
+```{r}
+marco_2021 <- marco_2021 %>% 
+  ungroup() %>% 
+  mutate(ln = ifelse(LISTA_NOMINAL_CASILLA==0, 1200, LISTA_NOMINAL_CASILLA)) %>% 
+  mutate(total = rbinom(n(), ln, 0.5)) 
+```
+
+```{r}
+ggplot(marco_2021, aes(x=ln, total)) +
+  geom_point() +
+  geom_abline()
+```
+```{r}
+simulados_tbl <- marco_2021 %>% 
+  select(CLAVE_CASILLA, ID_ESTADO, estrato, total, ln) %>% 
+  full_join(candidatos_prop %>% select(ID_ESTADO, PARTIDO, prop)) %>% 
+  group_by(CLAVE_CASILLA) %>% 
+  mutate(votos = as.numeric(rmultinom(1, total, prop)))
+```
+```{r}
+simulados_tbl %>% group_by(CLAVE_CASILLA) %>% 
+  summarise(total_sim = sum(votos), total = first(total)) %>% 
+  ggplot(aes(x = total_sim, y = total)) + geom_point()
+```
+
+```{r}
+sims_lista <- simulados_tbl %>% split(.$ID_ESTADO) %>% 
+  map(function(df){
+    df %>% select(CLAVE_CASILLA, ID_ESTADO, estrato, PARTIDO, votos) %>%
+      pivot_wider(names_from = PARTIDO, values_from = votos)
+  })
+```
+
+```{r}
+walk(sims_lista, ~write_csv(.x, paste0("./sims/votacion_sim_", .x$ID_ESTADO[1], ".csv") ))
+```
+
+```{r}
+map(sims_lista, function(df){
+  df %>% ungroup %>% 
+    select(-estrato) %>% 
+    summarise(across(where(is.numeric), sum)) %>% 
+    pivot_longer(cols = c(-ID_ESTADO), names_to = "partido") %>% 
+    arrange(value)
+})
+```
+
