@@ -197,6 +197,6 @@ nrow(marco_conf_selec)
 ```
 
 ```{r}
-write_rds(marco_conf_selec, "../datos/marco_2021.rds")
+write_rds(marco_conf_selec %>% ungroup, "../datos/marco_2021.rds")
 ```
 
