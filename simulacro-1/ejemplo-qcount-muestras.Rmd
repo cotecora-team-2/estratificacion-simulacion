@@ -11,6 +11,9 @@ knitr::opts_chunk$set(echo = TRUE)
 library(quickcountmx)
 library(tidyverse)
 marco_2021 <- read_rds("../datos/marco_2021.rds") %>% ungroup
+marco_2021 <- marco_2021 %>% 
+  ungroup() %>% 
+  mutate(ln = ifelse(LISTA_NOMINAL_CASILLA==0, 1200, LISTA_NOMINAL_CASILLA))
 ```
 
 ```{r}
@@ -70,6 +73,7 @@ ajuste <- hb_estimation(muestra_m, stratum = estrato, id_station = no_casilla,
               parties = all_of(lista_candidatos),
               covariates = comp_marg_imp, num_iter = 300, chains = 4, part = TRUE)
 ```
+
 ```{r}
 ajuste$estimates %>%
   mutate(median = 100*median, inf = 100*inf, sup = 100*sup, ee = 100*ee) %>% 
