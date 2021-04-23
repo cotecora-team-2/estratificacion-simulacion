@@ -1,0 +1,69 @@
+---
+title: "Checar muestras"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(quickcountmx)
+library(tidyverse)
+marco_2021 <- read_rds("../datos/marco_2021.rds")
+marco_2021 <- marco_2021 %>% 
+  ungroup() %>% 
+  mutate(ln = ifelse(LISTA_NOMINAL_CASILLA==0, 1200, LISTA_NOMINAL_CASILLA))
+```
+
+```{r}
+id_estado <- 6
+candidatos <- read_csv("datos/estados_candidatos_partidos_2021.csv") %>% 
+  filter(ID_ESTADO == id_estado)
+votacion_larga <- read_csv("sims/votacion_sim_6.csv") %>% 
+  pivot_longer(cols = c(-CLAVE_CASILLA, -ID_ESTADO, -estrato), names_to = "PARTIDO",
+               values_to = "votos")
+votacion <- votacion_larga %>% 
+  left_join(candidatos) %>% 
+  group_by(CLAVE_CASILLA, ID_ESTADO, estrato, CANDIDATO) %>%
+  summarise(votos = sum(votos)) %>% 
+  pivot_wider(names_from = CANDIDATO, values_from = votos)
+votacion
+```
+
+```{r}
+participacion <- sum(votacion_larga$votos) / sum(marco_2021 %>% filter(ID_ESTADO==6) %>% pull(LISTA_NOMINAL_CASILLA))
+participacion
+```
+
+
+```{r}
+muestra <- select_sample_prop(votacion, stratum = estrato, frac= 0.15, seed=1123)
+```
+
+```{r}
+muestra_m <- left_join(muestra, marco_2021) %>% 
+  mutate(estrato = as.character(estrato))
+data_stratum_tbl <- marco_2021 %>% 
+  filter(ID_ESTADO==6) %>%  count(estrato) %>% 
+  mutate(estrato = as.character(estrato))
+```
+
+
+```{r}
+ratio_estimation(muestra_m, stratum = estrato, n_stratum = n, 
+                 data_stratum = data_stratum_tbl, 
+                 parties = AICA:VMA, B = 100)
+```
+
+```{r}
+ajuste <- hb_estimation(muestra_m, stratum = estrato, id_station = no_casilla, 
+                        sampling_frame = marco_2021 %>% filter(ID_ESTADO==6), 
+              parties = AICA:VMA,
+              covariates = comp_marg_imp, num_iter = 300, chains = 4, part = TRUE)
+```
+
+```{r}
+ajuste$estimates
+```
+
