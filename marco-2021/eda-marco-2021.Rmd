@@ -4,12 +4,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-```{r setup, include=FALSE}
-
 knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
-
 library(quickcountmx)
 library(tidyverse)
 library(gt)
@@ -19,10 +14,14 @@ library(gt)
 
 
 ```{r}
-casillas_2021 <- read_delim("data/19_UBICACION_CASILLAS_APROBADAS_CG_20210414_TSecc_ZonaArea.txt",
+casillas_2021 <- read_delim("../datos/19_UBICACION_CASILLAS_APROBADAS_CG_20210414_TSecc_ZonaArea.txt",
                        "|", escape_double = FALSE, trim_ws = TRUE)
 edos_id <- c(6, 8, 16, 18, 32)
+casillas_2021 %>% filter(ID_ESTADO %in% edos_id) %>% count(NOMBRE_ESTADO)
+```
 
+
+```{r}
 casillas_edos_2021 <- casillas_2021 %>% 
     filter(ID_ESTADO %in% edos_id) %>% 
     mutate(SECCION = as.character(SECCION) %>% str_pad(4, pad = "0")) %>% 
@@ -58,18 +57,18 @@ edo_df %>%
 
 ```{r}
 edo_seccion_2018 <- conteo_edos_2018 %>% 
-    count(ID_ESTADO, ID_DISTRITO, SECCION, name = "n_2018")
+    count(NOMBRE_ESTADO, ID_DISTRITO, SECCION, name = "n_2018")
 
 edo_seccion_2021 <- casillas_edos_2021 %>% 
-    count(ID_ESTADO, ID_DISTRITO = ID_DISTRITO_FEDERAL, SECCION, name = "n_2021") 
+    count(NOMBRE_ESTADO, ID_DISTRITO = ID_DISTRITO_FEDERAL, SECCION, name = "n_2021") 
 
 edo_seccion_nuevas <- edo_seccion_2021 %>% 
     anti_join(edo_seccion_2018) %>% 
-    count(ID_ESTADO, ID_DISTRITO, name = "nuevas")
+    count(NOMBRE_ESTADO, ID_DISTRITO, name = "nuevas")
 
 edo_seccion_desaparecidas <- edo_seccion_2018 %>% 
     anti_join(edo_seccion_2021) %>% 
-    count(ID_ESTADO, ID_DISTRITO, name = "desaparecidas")
+    count(NOMBRE_ESTADO, ID_DISTRITO, name = "desaparecidas")
 ```
 
 
@@ -77,11 +76,11 @@ edo_seccion_desaparecidas <- edo_seccion_2018 %>%
 ```{r}
 edo_seccion_nuevas %>% 
     left_join(edo_seccion_desaparecidas) %>% 
-    left_join(edo_seccion_2021 %>% count(ID_ESTADO, ID_DISTRITO, 
+    left_join(edo_seccion_2021 %>% count(NOMBRE_ESTADO, ID_DISTRITO, 
                                          name = "total_2021")) %>% 
-    left_join(edo_seccion_2018 %>% count(ID_ESTADO, ID_DISTRITO, 
+    left_join(edo_seccion_2018 %>% count(NOMBRE_ESTADO, ID_DISTRITO, 
                                          name = "total_2018")) %>% 
-    group_by(ID_ESTADO) %>% 
+    group_by(NOMBRE_ESTADO) %>% 
     gt()
 ```
 
@@ -94,20 +93,106 @@ edo_seccion_nuevas %>%
 ## Unión 2018-2021
 
 ```{r}
-data("nay_2015")
-data("zac_2015")
-
-nay_2015 %>% 
-    select(ID_ESTADO, NOMBRE_ESTADO, ID_DISTRITO, SECCION, CASILLA, indice_grupo) %>% 
-    distinct() %>% 
-
 conteo_edos_sub_2018 <- conteo_edos_2018 %>% 
-    select(ID_ESTADO, NOMBRE_ESTADO, ID_DISTRITO, SECCION, CASILLA, .fittedPC1, 
-           TIPO_CASILLA = tipo_casilla) %>% 
+    select(ID_ESTADO, ID_DISTRITO, SECCION, .fittedPC1) %>% 
     distinct()
 casillas_edos_marco_2021 <- casillas_edos_2021 %>% 
-    left_join(conteo_edos_sub_2018, by = c("ID_ESTADO", "NOMBRE_ESTADO", "ID_DISTRITO",
-                                           "SECCION", "CASILLA", "TIPO_CASILLA"))
+    left_join(conteo_edos_sub_2018, by = c("ID_ESTADO",  "ID_DISTRITO",
+                                           "SECCION"))
 sum(is.na(casillas_edos_marco_2021$.fittedPC1))
+```
+
+Cargar componente votos 2015
+
+```{r cargar-datos, include = FALSE}
+conteo_15 <- read_csv("../datos/conteo_15_inegi_10_sin_imputar.csv")
+#estratos_colapsado <- read_csv("../datos/reporte/estratos_colapsados_con_chih.csv") %>% 
+#  group_by(state_abbr, estratificacion_num, estrato_df_colapsado) %>% 
+#  summarise(n_casillas = sum(n), .groups = "drop")
+comp_15 <- conteo_15 %>%
+  group_by(ID_ESTADO, ID_DISTRITO = ID_DTTO_FEDERAL_jul2020,
+           SECCION = SECCION_jul2020) %>%
+  summarise(comp_votos = mean(.fittedPC1)) %>%
+  ungroup() %>% 
+  mutate(SECCION = stringr::str_pad(SECCION, 4, pad = "0"))
+```
+
+```{r}
+marco_2021 <- casillas_edos_marco_2021 %>% 
+  left_join(comp_15)
+marco_2021 %>% count(is.na(comp_votos))
+```
+
+```{r}
+marco_2021 <- marco_2021 %>% 
+  group_by(ID_ESTADO) %>% 
+  arrange(CLAVE_CASILLA, .by_group = TRUE) %>% 
+  mutate(no_casilla = row_number()) %>% 
+  rename(comp_marg = .fittedPC1)
+```
+
+## Imputar
+
+```{r}
+marco_2021_imp <- marco_2021 %>% 
+  group_by(ID_ESTADO, ID_DISTRITO) %>% 
+  mutate(comp_marg_imp = ifelse(is.na(comp_marg), mean(comp_marg, na.rm = TRUE), comp_marg)) %>% 
+  mutate(comp_votos_imp = ifelse(is.na(comp_votos), mean(comp_votos, na.rm = TRUE), comp_votos))
+```
+
+```{r}
+marco_2021 <-  marco_2021_imp %>% 
+  select(-comp_marg, -comp_votos, -X42)
+```
+
+
+
+```{r cargar-datos, include = FALSE}
+# configuraciones
+estratif_conf <- crossing(
+         num_gpos_marginacion = c(1,2),
+         num_gpos_ln = c(1,2), 
+         num_gpos_votos = c(1, 2)) %>% 
+  mutate(estratificacion_num = row_number()) %>% 
+  transpose()
+# computos distritales
+# preparar estratificaciones
+marco_conf <- map_df(estratif_conf, function(x){
+  num_gpos_marginacion <- x$num_gpos_marginacion
+  num_gpos_ln <- x$num_gpos_ln
+  num_gpos_votos <- x$num_gpos_votos
+  estratificacion_num <- x$estratificacion_num
+  marco <- marco_2021 %>% 
+    group_by(ID_ESTADO, NOMBRE_ESTADO) %>%
+    mutate(estratificacion_num = estratificacion_num) %>% 
+    mutate(indice_grupo = ntile(comp_marg_imp, num_gpos_marginacion)) %>%
+    mutate(indice_votos = ntile(comp_votos_imp, num_gpos_votos)) %>%
+    mutate(tam_ln = ntile(LISTA_NOMINAL_CASILLA, num_gpos_ln)) %>%
+    mutate(estrato_df = interaction(ID_ESTADO, ID_DISTRITO, indice_grupo, tam_ln, indice_votos 
+                                  ))
+}) 
+conf_selec <- unique(marco_conf %>% select(ID_ESTADO, NOMBRE_ESTADO)) %>% 
+  left_join(tibble(ID_ESTADO = c(6,8,16,18,32), estratificacion_num = c(6,3,3,6,6)))
+marco_conf_selec <- marco_conf %>% semi_join(conf_selec)
+```
+
+```{r}
+marco_conf_selec %>% group_by(ID_ESTADO, NOMBRE_ESTADO) %>% 
+  count(estrato_df) %>% 
+write_csv( "../datos/colapsados_2021/estratos_original.csv")
+```
+
+```{r}
+estratos_colapsados <- read_csv("../datos/colapsados_2021/estratos_colapsados.csv") %>% 
+  select(-NOMBRE_ESTADO)
+marco_conf_selec <- left_join(marco_conf_selec, estratos_colapsados) %>% 
+  rename(estrato = estrato_colapsado) %>% 
+  select(-estrato_df, -estratificacion_num, -indice_grupo, -indice_votos, -tam_ln, -n)
+```
+
+```{r}
+marco_conf_selec %>% group_by(ID_ESTADO, NOMBRE_ESTADO) %>% 
+  count(estrato) %>% gt()
+nrow(marco_conf_selec)
 ```
 
