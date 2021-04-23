@@ -196,3 +196,7 @@ marco_conf_selec %>% group_by(ID_ESTADO, NOMBRE_ESTADO) %>%
 nrow(marco_conf_selec)
 ```
 
+```{r}
+write_rds(marco_conf_selec, "../datos/marco_2021.rds")
+```
+
