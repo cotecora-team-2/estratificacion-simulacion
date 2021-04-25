@@ -38,9 +38,7 @@ partidos <- c("AMLO", "JAMK", "RAC", "CAND_IND_01", "CAND_IND_02", "CNR", "VN")
 
 ```{r cargar-datos, include = FALSE}
 conteo_15 <- read_csv("../datos/conteo_15_inegi_10_sin_imputar.csv")
-estratos_colapsado <- read_csv("../datos/reporte/estratos_colapsados_con_chih.csv") %>% 
-  group_by(state_abbr, estratificacion_num, estrato_df_colapsado) %>% 
-  summarise(n_casillas = sum(n), .groups = "drop")
+estratos_colapsado <- read_csv("../datos/reporte/estratos_colapsados_con_chih.csv") 
 comp_15 <- conteo_15 %>%
   group_by(ID_ESTADO, ID_DISTRITO = ID_DTTO_FEDERAL_jul2020,
            SECCION = SECCION_jul2020) %>%
@@ -76,7 +74,8 @@ marco_conf <- map_df(estratif_conf, function(x){
   mutate(indice_votos = ntile(comp_votos, num_gpos_votos)) %>%
   mutate(tam_ln = ntile(LISTA_NOMINAL_CASILLA, num_gpos_ln)) %>%
   mutate(estrato_df = interaction(ID_DISTRITO, indice_grupo, indice_votos, 
-                                  tam_ln))
+                                  tam_ln)) %>% 
+  left_join(estratos_colapsado)
 })
 # Valores observados
 estados_tbl <- conteo_2018 %>% select(NOMBRE_ESTADO, state_abbr) %>% unique
@@ -84,8 +83,8 @@ obs_tbl <-
   map_df(estados, function(estado){
     marco_estado <- marco_conf %>% 
       filter(state_abbr == estado, estratificacion_num == 1) 
-    estratos_tbl <- marco_estado %>% group_by(estrato_df) %>% count()
-    total <- ratio_estimation(marco_estado, stratum = estrato_df, 
+    estratos_tbl <- marco_estado %>% group_by(estrato_df_colapsado) %>% count()
+    total <- ratio_estimation(marco_estado, stratum = estrato_df_colapsado, 
                  data_stratum = estratos_tbl, 
                  n_stratum = n, parties = any_of(partidos), std_errors = FALSE)
     total$state_abbr <- estado
@@ -96,7 +95,7 @@ obs_tbl <- obs_tbl %>% rename(prop_obs = prop) %>%
   left_join(estados_tbl)
 #
 estratos_tbl <- marco_conf %>% 
-  group_by(state_abbr, indice_grupo, indice_votos, tam_ln, estratificacion_num, estrato_df) %>% 
+  group_by(state_abbr, indice_grupo, indice_votos, tam_ln, estratificacion_num, estrato_df_colapsado) %>% 
   count()
 ## cargar simulaciones
 est_sin_censura <- readr::read_rds("../datos/reporte/estimaciones_sin_censura_reporte_solo_chih.rds") %>% left_join(obs_tbl)
@@ -188,8 +187,6 @@ fortificar_ajustado <- function(datos, ajustes_ancho){
     filter(party %in% c("AMLO", "JAMK", "RAC"))
     
 }
-
-
 resumir_sims <- function(datos){
   datos %>% group_by(NOMBRE_ESTADO, estrat_num, frac_m, prop_observada) %>% 
     summarise(precision_max = quantile(precision, 0.95), cobertura = mean(cubre),
@@ -349,11 +346,10 @@ intervalos que tengan cobertura real cercana a 95%
 ## Propuesta de diseño 
 
 ```{r, message=FALSE, warning = FALSE, echo=FALSE}
-num_estratos_tbl <- marco_conf %>% group_by(NOMBRE_ESTADO, estratificacion_num, estrato_df) %>% 
+num_estratos_tbl <- marco_conf %>% group_by(NOMBRE_ESTADO, estratificacion_num, estrato_df_colapsado) %>% 
   tally() %>% 
   filter(estratificacion_num == 6, NOMBRE_ESTADO!="CHIHUAHUA") %>% 
   group_by(NOMBRE_ESTADO) %>% summarise(num_estratos = n())
-
 frac_seleccionadas <- tibble(NOMBRE_ESTADO =  c("ZACATECAS", "COLIMA", "NAYARIT"),
                     frac_m = c(0.15, 0.20, 0.20))
 con_censura_sc_tbl %>% 
@@ -385,17 +381,14 @@ En la siguiente tabla mostramos el promedio de porcentaje de CAEs con 1,2,3 o 4 
 ```{r, echo = FALSE, warning = FALSE, message=FALSE, cache = TRUE}
 marco_ext <- read_csv("../datos/reporte/marco_ext.csv") %>% 
   select(iD_ESTADO, CLAVE_CASILLA, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD)
-
 marco <- marco_ext %>% 
   mutate(cae = paste(iD_ESTADO, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD, 
                      sep = "-")) %>% 
   select(CLAVE_CASILLA, cae) 
-
 marco_caes <- marco_conf %>% 
   filter(state_abbr != "CHIH", estratificacion_num == 1) %>% 
   left_join(distinct(marco), by = "CLAVE_CASILLA") %>% 
-  mutate(estrato = paste(state_abbr, estrato_df))
-
+  mutate(estrato = paste(state_abbr, estrato_df_colapsado))
 simular_caes <- function(frac_m){
   muestra <- select_sample_prop(marco_caes, stratum = estrato, frac = frac_m)
   muestra %>% 
@@ -406,8 +399,6 @@ simular_caes <- function(frac_m){
     mutate(prop_casos = 100 * n_casos / sum(n_casos)) %>% 
     ungroup()
 }
-
-
 replicar_sims <- function(frac_m = 0.15, runs = 200){
   sims <- rerun(runs, simular_caes(frac_m = frac_m)) %>% 
     set_names(., 1:runs) %>% 
@@ -534,11 +525,10 @@ una fracción de muestreo menor a 0.10.
 ### Propuestas de diseño (preliminares)
 
 ```{r, message=FALSE, warning = FALSE, echo=FALSE}
-num_estratos_tbl <- marco_conf %>% group_by(NOMBRE_ESTADO, estratificacion_num, estrato_df) %>% 
+num_estratos_tbl <- marco_conf %>% group_by(NOMBRE_ESTADO, estratificacion_num, estrato_df_colapsado) %>% 
   tally() %>% 
   filter(estratificacion_num == 3, NOMBRE_ESTADO=="CHIHUAHUA") %>% 
   group_by(NOMBRE_ESTADO) %>% summarise(num_estratos = n())
-
 frac_seleccionadas <- tibble(NOMBRE_ESTADO =  c("CHIHUAHUA"),
                     frac_m = c(0.06, 0.08))
 con_censura_tbl %>% 
@@ -567,7 +557,9 @@ con_censura_tbl %>%
 ## Número de casillas por estrato para CHIH, NAY, COL y ZAC
 
 ```{r, echo = FALSE}
-estratos_colapsado %>% filter(estratificacion_num==6, state_abbr!="CHIH") %>% 
+estratos_colapsado %>% group_by(state_abbr, estratificacion_num, estrato_df_colapsado) %>% 
+  summarise(n_casillas = sum(n), .groups = "drop") %>%
+  filter(estratificacion_num==6, state_abbr!="CHIH") %>% 
   ungroup() %>% 
   select(state_abbr, estrato_df_colapsado, n_casillas) %>% 
   rename(Estado = state_abbr, estrato = estrato_df_colapsado) %>% 
@@ -576,7 +568,9 @@ estratos_colapsado %>% filter(estratificacion_num==6, state_abbr!="CHIH") %>%
 ```
 
 ```{r, echo = FALSE}
-estratos_colapsado %>% filter(estratificacion_num==6, state_abbr=="CHIH") %>% 
+estratos_colapsado %>% group_by(state_abbr, estratificacion_num, estrato_df_colapsado) %>% 
+  summarise(n_casillas = sum(n), .groups = "drop") %>%
+  filter(estratificacion_num==6, state_abbr=="CHIH") %>% 
   ungroup() %>% 
   select(state_abbr, estrato_df_colapsado, n_casillas) %>% 
   rename(Estado = state_abbr, estrato = estrato_df_colapsado) %>% 
@@ -593,17 +587,14 @@ La fracción de muestreo es similar en todos los estados.
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=3.5, fig.height=3.5}
 library(tidyverse)
-
 # Remesa de salida (https://www.ine.mx/conteos-rapidos-procesos-electorales-federal-locales-2017-2018/)
 remesas <- read_delim("../datos/reporte/LISTADO_CASILLAS_2018.csv", delim = "|", skip = 1)
 # Muestra seleccionada (https://www.ine.mx/conteos-rapidos-procesos-electorales-federal-locales-2017-2018/)
 muestra_selec <- read_csv("../datos/reporte/4-ConteoRapido18MUESTRA-ELECCION-PRESIDENCIAL.csv") %>%
   mutate(iD_ESTADO = as.numeric(iD_ESTADO))
-
 marco_casillas <- marco_ext %>% count(iD_ESTADO, name = "n_total")
 remesas_casillas <- remesas %>% count(iD_ESTADO, name = "n_remesa")
 muestra_casillas <- muestra_selec %>% count(iD_ESTADO, name = "n_seleccionada")
-
 llegada_fraccion <- marco_casillas %>%
   left_join(remesas_casillas) %>%
   left_join(muestra_casillas) %>%
@@ -612,7 +603,6 @@ llegada_fraccion <- marco_casillas %>%
          estatales = ifelse(iD_ESTADO %in% c(11, 7, 21, 9, 14, 17, 27, 30, 31),
                             "estatal", "no estatal")) %>%
   filter(!(iD_ESTADO %in% c(2, 26)))
-
 ggplot(llegada_fraccion, aes(x = fraccion, y = porcent_llegada,
                              label = iD_ESTADO)) +
   geom_boxplot() +
@@ -642,7 +632,6 @@ muestra_selec_cae <- muestra_selec %>%
   mutate(n_casilla = n()) %>% 
   ungroup() %>% 
   select(CAE, n_casilla)
-
 muestra_selec_cae %>% 
   group_by(CAE) %>% 
   count(CAE, name = "caes_casilla") %>%
@@ -671,13 +660,11 @@ remesas_caes <- remesas12 %>%
   mutate(CAE = paste(iD_ESTADO, ID_DISTRITO_FEDERAL, ID_AREA_RESPONSABILIDAD, sep = "_")) %>% 
   mutate(timestamp = lubridate::ymd_hms(paste(ANIO, MES, DIA, HORA, MINUTOS, SEGUNDOS, sep = "-"))) %>% 
   select(CAE, timestamp)
-
 diferencias <- muestra_selec_cae %>% 
   count(CAE, name = "casillas_plan") %>% 
   left_join(remesas_caes %>% count(CAE, name = "casillas_remesa")) %>% 
   mutate(casillas_remesa = ifelse(is.na(casillas_remesa), 0, casillas_remesa), 
          casillas_faltantes = casillas_plan - casillas_remesa)
-
 diferencias %>% 
   group_by(casillas_plan) %>% 
   summarise(
@@ -702,7 +689,6 @@ diferencias_2230 <- muestra_selec_cae %>%
   left_join(remesas_caes_2230 %>% count(CAE, name = "casillas_remesa")) %>% 
   mutate(casillas_remesa = ifelse(is.na(casillas_remesa), 0, casillas_remesa), 
          casillas_faltantes = casillas_plan - casillas_remesa)
-
 diferencias_2230 %>% 
   group_by(casillas_plan) %>% 
   summarise(
@@ -719,4 +705,5 @@ diferencias_2230 %>%
   group_by(casillas_plan) %>% 
   summarise(completo = round(100 * mean(casillas_remesa == casillas_plan)))
 ```
+
 
