@@ -79,8 +79,17 @@ map(sims_lista, function(df){
 })
 ```
 ```{r}
-params_muestra <- list(frac_m = c(0.20, 0.06, 0.065, 0.20, 0.15), 
-     seed = c(263131, 7087177, 470742, 747552, 366220)) %>% 
+# cambiar para tener n documentada
+n_doc_casillas <- tibble(ID_ESTADO = c(6, 8, 16, 18, 32),
+                         n_fija = c(190, 317, 400, 334, 376))
+n_total_casillas <- marco_2021 %>% group_by(ID_ESTADO) %>% count() %>% 
+  arrange(ID_ESTADO) 
+frac_tbl <- left_join(n_doc_casillas, n_total_casillas) %>% 
+  mutate(frac_m = n_fija / n)
+frac_m <- frac_tbl %>% arrange(ID_ESTADO) %>% pull(frac_m)
+params_muestra <- list(frac_m = frac_m, 
+     seed = c(263131, 7087177, 470742, 747552, 366220), 
+     n_fija = n_doc_casillas$n_fija) %>% 
   transpose
 names(params_muestra) <-c(6, 8, 16, 18, 32)
 muestras_lista <- sims_lista %>% map(function(df){
@@ -89,12 +98,18 @@ muestras_lista <- sims_lista %>% map(function(df){
   frac_m <- params_muestra[[estado]]$frac_m
   muestra <- select_sample_prop(df, stratum = estrato, frac = frac_m,
                                 seed = seed)
-  muestra
+  sample_n(muestra, params_muestra[[estado]]$n_fija)
 })
 ```
 
 ```{r}
+map(muestras_lista, ~ nrow(.x))
+```
+
+
+```{r}
 walk(muestras_lista,  ~write_csv(.x, paste0("./sims/muestra_sim_", .x$ID_ESTADO[1], ".csv") ))
 ```
+
 
 
