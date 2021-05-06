@@ -1,0 +1,115 @@
+---
+title: "Checar muestras"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(quickcountmx)
+library(tidyverse)
+marco_2021 <- read_rds("../datos/marco_2021.rds") %>% ungroup
+marco_2021 <- marco_2021 %>% 
+  ungroup() %>% 
+  mutate(ln = ifelse(LISTA_NOMINAL_CASILLA==0, 1200, LISTA_NOMINAL_CASILLA))
+```
+
+```{r}
+id_estado <- 16
+candidatos <- read_csv("datos/estados_candidatos_partidos_2021.csv") %>% 
+  filter(ID_ESTADO == id_estado)
+lista_candidatos <- candidatos$CANDIDATO %>% unique()
+lista_coaliciones <- candidatos$PARTIDO %>% unique()
+votacion_larga <- read_csv(paste0("sims/votacion_sim_",id_estado, ".csv")) %>% 
+  pivot_longer(cols = c(-CLAVE_CASILLA, -ID_ESTADO, -estrato), names_to = "PARTIDO",
+               values_to = "votos")
+votacion <- votacion_larga %>% 
+  left_join(candidatos) %>% 
+  group_by(CLAVE_CASILLA, ID_ESTADO, estrato, CANDIDATO) %>%
+  summarise(votos = sum(votos)) %>% 
+  pivot_wider(names_from = CANDIDATO, values_from = votos)
+votacion
+```
+
+```{r}
+participacion <- sum(votacion_larga$votos) / sum(marco_2021 %>% filter(ID_ESTADO==id_estado) %>% pull(LISTA_NOMINAL_CASILLA))
+participacion
+```
+
+
+```{r}
+muestra <- read_csv(paste0("sims/muestra_sim_", id_estado, ".csv"))
+```
+
+```{r}
+muestra_m <- left_join(muestra, marco_2021) %>% 
+  mutate(estrato = as.character(estrato)) %>% 
+  select(CLAVE_CASILLA, ID_ESTADO, estrato, no_casilla, any_of(lista_coaliciones)) %>% 
+   pivot_longer(cols = c(-CLAVE_CASILLA, -ID_ESTADO, -estrato, -no_casilla), names_to = "PARTIDO",
+               values_to = "votos") %>% 
+  left_join(candidatos) %>% 
+  group_by(CLAVE_CASILLA, ID_ESTADO, estrato, CANDIDATO, no_casilla) %>%
+  summarise(votos = sum(votos)) %>% 
+  pivot_wider(names_from = CANDIDATO, values_from = votos)
+data_stratum_tbl <- marco_2021 %>% 
+  filter(ID_ESTADO==id_estado) %>%  count(estrato) %>% 
+  mutate(estrato = as.character(estrato))
+```
+
+
+```{r}
+ratio_estimation(muestra_m, stratum = estrato, n_stratum = n, 
+                 data_stratum = data_stratum_tbl, 
+                 parties = all_of(lista_candidatos), B = 50)
+```
+
+Estimación total muestra
+
+```{r}
+ajuste <- hb_estimation(muestra_m, stratum = estrato, id_station = no_casilla, 
+                        sampling_frame = marco_2021 %>% filter(ID_ESTADO==id_estado), 
+              parties = all_of(lista_candidatos),
+              covariates = comp_marg_imp, num_iter = 300, chains = 4, part = TRUE)
+```
+
+```{r}
+ajuste$estimates %>%
+  mutate(median = 100*median, inf = 100*inf, sup = 100*sup, ee = 100*ee) %>% 
+  mutate(across(where(is.numeric), round, 1)) %>% 
+  arrange(desc(median)) %>% 
+  knitr::kable()
+```
+
+## Estimacion por remesas
+
+```{r}
+set.seed(123)
+muestra_m <- muestra_m %>% 
+  ungroup %>% 
+  mutate(u = runif(n())) %>% 
+  mutate(prop_obs = percent_rank(u))
+```
+
+```{r}
+n_total <- nrow(muestra_m)
+remesas_tbl <- map_df(c(0.01, 0.025, seq(0.1, 0.95, 0.1)), function(prop_remesa){
+  muestra_obs <- muestra_m %>% filter(prop_obs < prop_remesa)
+  print(nrow(muestra_obs))
+  ajuste <- hb_estimation(muestra_obs, stratum = estrato, id_station = no_casilla, 
+                        sampling_frame = marco_2021 %>% filter(ID_ESTADO==id_estado), 
+              parties = all_of(lista_candidatos),
+              prop_obs = prop_remesa, 
+              covariates = comp_marg_imp, num_iter = 300, chains = 4, part = TRUE)
+  ajuste$estimates %>% mutate(prop_obs = prop_remesa)
+})
+```
+```{r}
+remesas_tbl %>% 
+  filter(party != "part") %>% 
+  ggplot(aes(x = prop_obs, ymin = inf, ymax = sup, group = party, fill = party)) +
+  geom_ribbon(alpha = 0.7)
+```
+
+
