@@ -1,0 +1,26 @@
+---
+title: "Untitled"
+author: "M. Anzarut, F. González, I. Meza, T. Ortiz"
+date: "5/5/2021"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+marco_2021 <- read_rds("../datos/marco_2021.rds")
+marco_4 <- filter(marco_2021, ID_ESTADO != 16)
+marco_4 %>% group_by(ID_ESTADO) %>% count()
+```
+
+```{r}
+estratos_ce <- marco_4 %>% select(CLAVE_CASILLA, ID_ESTADO, estrato)
+```
+
+```{r}
+estratos_ce %>% group_by(ID_ESTADO, estrato) %>% count() %>% View()
+```
+
+```{r}
+write_csv(estratos_ce, "datos/estratos_equipo_2.csv")
+```
+
