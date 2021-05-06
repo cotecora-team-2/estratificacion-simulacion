@@ -14,7 +14,7 @@ library(gt)
 
 
 ```{r}
-casillas_2021 <- read_delim("../datos/19_UBICACION_CASILLAS_APROBADAS_CG_20210414_TSecc_ZonaArea.txt",
+casillas_2021 <- read_delim("../datos/casillas_aprobadas_010521.txt",
                        "|", escape_double = FALSE, trim_ws = TRUE)
 edos_id <- c(6, 8, 16, 18, 32)
 casillas_2021 %>% filter(ID_ESTADO %in% edos_id) %>% count(NOMBRE_ESTADO)
@@ -36,7 +36,7 @@ conteo_edos_2018 <- conteo_2018 %>%
 
 * Mismos distritos federales, con aprox mismo número de casillas.
 
-* 600 casillas nuevas en los 5 estados.
+* 688 casillas nuevas en los 5 estados.
 
 ```{r}
 edo_df_2018 <- conteo_edos_2018 %>% 
@@ -44,7 +44,9 @@ edo_df_2018 <- conteo_edos_2018 %>%
 edo_df <- casillas_edos_2021 %>% 
     count(ID_ESTADO, ID_DISTRITO, name = "n_2021") %>% 
     full_join(edo_df_2018) %>% 
-    mutate(dif_percent = round(100 * (n_2021 - n_2018) / n_2018))
+    mutate(
+      dif = n_2021 - n_2018,
+      dif_percent = round(100 * (n_2021 - n_2018) / n_2018))
 
 edo_df %>% 
     janitor::adorn_totals() %>% 
@@ -68,7 +70,7 @@ edo_seccion_nuevas <- edo_seccion_2021 %>%
 
 edo_seccion_desaparecidas <- edo_seccion_2018 %>% 
     anti_join(edo_seccion_2021) %>% 
-    count(NOMBRE_ESTADO, ID_DISTRITO, name = "desaparecidas")
+    count(NOMBRE_ESTADO, ID_DISTRITO, name = "desaparecidas") 
 ```
 
 
@@ -86,7 +88,7 @@ edo_seccion_nuevas %>%
 
 ###  Observaciones
 
-* Secciones desaparecidas total: 42
+* Secciones desaparecidas total: 41
 
 * Secciones nuevas total: 130
 
@@ -104,7 +106,7 @@ sum(is.na(casillas_edos_marco_2021$.fittedPC1))
 
 Cargar componente votos 2015
 
-```{r cargar-datos, include = FALSE}
+```{r, include = FALSE}
 conteo_15 <- read_csv("../datos/conteo_15_inegi_10_sin_imputar.csv")
 #estratos_colapsado <- read_csv("../datos/reporte/estratos_colapsados_con_chih.csv") %>% 
 #  group_by(state_abbr, estratificacion_num, estrato_df_colapsado) %>% 
@@ -142,7 +144,7 @@ marco_2021_imp <- marco_2021 %>%
 
 ```{r}
 marco_2021 <-  marco_2021_imp %>% 
-  select(-comp_marg, -comp_votos, -X42)
+  select(-comp_marg, -comp_votos)
 ```
 
 
@@ -175,6 +177,8 @@ conf_selec <- unique(marco_conf %>% select(ID_ESTADO, NOMBRE_ESTADO)) %>%
   left_join(tibble(ID_ESTADO = c(6,8,16,18,32), estratificacion_num = c(6,3,3,6,6)))
 marco_conf_selec <- marco_conf %>% semi_join(conf_selec)
 ```
+
+------
 
 ```{r}
 marco_conf_selec %>% group_by(ID_ESTADO, NOMBRE_ESTADO) %>% 
