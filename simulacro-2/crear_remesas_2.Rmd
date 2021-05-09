@@ -1,0 +1,166 @@
+---
+title: "Crear remesas"
+author: "M. Anzarut, F. González, I. Meza, T. Ortiz"
+date: "4/28/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(quickcountmx)
+marco_2021 <- read_rds("../datos/marco_2021.rds")
+```
+
+```{r}
+head(marco_2021) %>% 
+  names()
+```
+
+```{r}
+vars_remesa <- c("ID_ESTADO","ID_DISTRITO_FEDERAL","SECCION","TIPO_CASILLA", "ID_CASILLA","EXT_CONTIGUA","TIPO_SECCION","LISTA_NOMINAL","ID_MUNICIPIO",
+"ID_DIST_LOC", "ID_ESTRATO_F", "ESTRATO_F","ID_ESTRATO_L","ESTRATO_L","ID_AREA_RESPONSABILIDAD")
+marco_remesas <- marco_2021 %>% 
+  mutate(ID_ESTRATO_L = estrato) %>% 
+  mutate(ESTRATO_L = paste0("estrato_", ID_ESTRATO_L)) %>% 
+  mutate(ID_ESTRATO_F = ID_DISTRITO_FEDERAL) %>% 
+  mutate(ID_DIST_LOC = ID_DISTRITO_LOCAL) %>% 
+  mutate(ESTRATO_F = ID_DISTRITO_FEDERAL) %>% 
+  mutate(LISTA_NOMINAL = LISTA_NOMINAL_CASILLA) %>% 
+  select(all_of(vars_remesa))
+```
+
+```{r}
+otras <- c("ANIO","MES","DIA","HORA","MINUTOS","SEGUNDOS","ORIGEN_CAPTURA","MODIFICADO")
+```
+
+
+```{r}
+marco_temp_2 <- marco_remesas %>%  mutate(CLAVE_CASILLA = paste0(stringr::str_pad(ID_ESTADO, 2, pad = "0"),
+                                  stringr::str_pad(SECCION, 4, pad = "0"),
+                                  TIPO_CASILLA,
+                                  stringr::str_pad(ID_CASILLA, 2, pad = "0"),
+                                  stringr::str_pad(EXT_CONTIGUA,2,pad="0")))# %>% 
+  #mutate(CLAVE_CASILLA = paste0("'", CLAVE_CASILLA, "'"))
+```
+
+
+```{r}
+candidatos <- read_csv("datos/estados_candidatos_partidos_2021.csv")
+sims_6 <- read_csv("sims/muestra_sim_6.csv")
+sims_8 <- read_csv("sims/muestra_sim_8.csv")
+sims_18 <- read_csv("sims/muestra_sim_18.csv")
+sims_32 <- read_csv("sims/muestra_sim_32.csv")
+```
+
+
+```{r}
+params <-  list(
+  list(datos = sims_6, estado = 6),
+  list(datos = sims_8, estado = 8),
+  list(datos = sims_18, estado = 18),
+  list(datos = sims_32, estado = 32)
+)
+muestras_tot_remesas <- map(params, function(x) {
+  nombres_cols <- filter(candidatos, ID_ESTADO==x$estado)$PARTIDO
+  nombres_cands <- filter(candidatos, ID_ESTADO==x$estado)$CANDIDATO
+
+    muestra_tot_remesas <- right_join(marco_temp_2, x$datos) %>% 
+    select(-CLAVE_CASILLA, -estrato) %>% 
+    rowwise() %>% 
+    mutate(TOTAL = sum(c_across(cols = all_of(nombres_cols))))
+  votos <- muestra_tot_remesas %>% 
+    ungroup %>% 
+    pivot_longer(cols = all_of(nombres_cols), 
+                 names_to="PARTIDO", values_to = "votos") %>% 
+    left_join(candidatos) %>% 
+    select(-TOTAL) %>% 
+    group_by(ID_ESTADO, ID_DISTRITO_FEDERAL, SECCION, TIPO_CASILLA, 
+             ID_CASILLA, EXT_CONTIGUA, TIPO_SECCION, CANDIDATO) %>% 
+    summarise(votos = sum(votos, na.rm = TRUE)) %>% 
+    ungroup %>% 
+    pivot_wider(names_from = CANDIDATO, values_from =  votos)
+  res <- left_join(muestra_tot_remesas, votos)
+  res
+})
+```
+
+
+```{r}
+set.seed(8232)
+muestras_remesas_1 <- map(muestras_tot_remesas, function(x_tbl){
+  sample_frac(x_tbl %>% ungroup, 0.89) %>% 
+    select(-OTROS)
+})
+
+muestras_remesas_2 <- map(muestras_remesas_1, function(x_tbl){
+  sample_frac(x_tbl, 0.75) 
+})
+
+muestras_remesas_3 <- map(muestras_remesas_2, function(x_tbl){
+  sample_frac(x_tbl, 0.5)
+})
+
+muestras_remesas_4 <- map(muestras_remesas_3, function(x_tbl){
+  sample_frac(x_tbl, 0.30)
+})
+
+muestras_remesas_5 <- map(muestras_remesas_4, function(x_tbl){
+  sample_n(x_tbl, 6)
+})
+```
+
+```{r}
+walk(muestras_remesas_5, function(x_tbl){
+  estado <- as.character(x_tbl$ID_ESTADO[1])
+  estado <- str_pad(estado, side = "left", pad = "0", width = 2)
+  num_casillas <- nrow(x_tbl)
+  write_file(paste0(num_casillas, "\n"),
+             paste0("remesas_sim/REMESAS02",estado,"06","1900.txt"))
+  write_delim(x_tbl, paste0("remesas_sim/REMESAS02",estado,"06","1900.txt"), 
+              delim = "|", append = TRUE, col_names = TRUE)
+})
+
+walk(muestras_remesas_4, function(x_tbl){
+  estado <- as.character(x_tbl$ID_ESTADO[1])
+  estado <- str_pad(estado, side = "left", pad = "0", width = 2)
+  num_casillas <- nrow(x_tbl)
+   write_file(paste0(num_casillas, "\n"),
+             paste0("remesas_sim/REMESAS02",estado,"06","1915.txt"))
+  write_delim(x_tbl, paste0("remesas_sim/REMESAS02",estado,"06","1915.txt"), delim = "|",
+              append = TRUE, col_names = TRUE)
+  #
+})
+
+walk(muestras_remesas_3, function(x_tbl){
+  estado <- as.character(x_tbl$ID_ESTADO[1])
+  estado <- str_pad(estado, side = "left", pad = "0", width = 2)
+  num_casillas <- nrow(x_tbl)
+     write_file(paste0(num_casillas, "\n"),
+             paste0("remesas_sim/REMESAS02",estado,"06","1930.txt"))
+  write_delim(x_tbl, paste0("remesas_sim/REMESAS02",estado,"06","1930.txt"), delim = "|",
+                            append = TRUE, col_names = TRUE)
+  #num_casillas <- nrow(x_tbl)
+})
+
+walk(muestras_remesas_2, function(x_tbl){
+  estado <- as.character(x_tbl$ID_ESTADO[1])
+  estado <- str_pad(estado, side = "left", pad = "0", width = 2)
+    num_casillas <- nrow(x_tbl)
+     write_file(paste0(num_casillas, "\n"),
+             paste0("remesas_sim/REMESAS02",estado,"06","1945.txt"))
+  write_delim(x_tbl, paste0("remesas_sim/REMESAS02",estado,"06","1945.txt"), delim = "|",
+                            append = TRUE, col_names = TRUE)
+  #num_casillas <- nrow(x_tbl)
+})
+
+walk(muestras_remesas_1, function(x_tbl){
+  estado <- as.character(x_tbl$ID_ESTADO[1])
+  estado <- str_pad(estado, side = "left", pad = "0", width = 2)
+  num_casillas <- nrow(x_tbl)
+     write_file(paste0(num_casillas, "\n"),
+             paste0("remesas_sim/REMESAS02",estado,"06","2000.txt"))
+  write_delim(x_tbl, paste0("remesas_sim/REMESAS02",estado,"06","2000.txt"), delim = "|",
+                            append = TRUE, col_names = TRUE)
+})
+```
+
